@@ -1,0 +1,183 @@
+%% Classical 2D vertex model for wound healing
+%
+% MODIFIED:
+% 1. ADDED: Force visualization plot inside the main time loop.
+%
+addpath(genpath('../common'))
+addpath(genpath('./functions2D'))
+
+close all;
+clear;
+clc;
+
+rng('default');
+
+%% 1 - Initialising the parameters
+
+%%% Choose tissue size
+param.Lx       = 10;                 % box length in x
+param.Ly       = 30;                 % box length in y
+
+%%% Choose tissue fluidity
+Case = 'fluid'; % 'fluid' or 'solid'
+
+%%% Load base parameters
+SingleCellContractionParameters; % Defines ka, rstiff, p0, etc.
+% StretchingParameters;
+% SelfPropelledParameters;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% --- WOUND CONFIGURATION --- %%%
+% Choose the type of wound to create.
+% Options: 'circular', 'elliptical', 'none'
+param.woundType = 'circular';
+
+% Parameters for a CIRCULAR wound
+param.woundCircular.center = [param.Lx/2, param.Ly/2]; % Wound center [x, y]
+param.woundCircular.radius = 1.0;                      % Wound radius
+
+% Parameters for an ELLIPTICAL wound
+param.woundElliptical.center = [param.Lx/2, param.Ly/2]; % Wound center [x, y]
+param.woundElliptical.x_axis = 8.0;                      % Semi-axis in x-direction
+param.woundElliptical.y_axis = 1.0;                      % Semi-axis in y-direction
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%% 2 - Generating mesh and Creating Wound
+celldata = genDataClassical(param);
+
+
+%%% Create the specified wound by removing cells
+switch param.woundType
+    case 'circular'
+        [celldata, ~] = createWound(celldata, 'circular', param.woundCircular, param);
+    case 'elliptical'
+        [celldata, ~] = createWound(celldata, 'elliptical', param.woundElliptical, param);
+    case 'none'
+        disp('No wound will be created.');
+    otherwise
+        disp('Invalid wound type specified. No wound created.');
+end
+
+
+%%% Identify wound edge cells for purse-string contraction
+[woundEdgeCells, woundEdges] = findWoundEdgeCells(celldata);
+param.cellIDtoContract = woundEdgeCells; % <-- THIS IS STILL NEEDED for plot3Dtissue coloring
+celldata.woundEdges = woundEdges; % <-- THIS IS NOW THE IMPORTANT PART
+
+
+% Plotting initial state with the wound
+figure(2)
+plot3Dtissue(celldata.nCells, celldata.r, celldata.connec,param);
+hold on;
+% Optional: Highlight the purse-string cells
+p_wound = plot3Dtissue(length(woundEdgeCells), celldata.r, celldata.connec(woundEdgeCells), param);
+set(p_wound, 'FaceColor', 'magenta', 'FaceAlpha', 0.5);
+title('Initial State with Wound');
+rectangle('Position',[0 0 param.Lx param.Ly]);
+hold off;
+pause(5)
+
+
+%% 3 - Computing
+totalsimtime = tic;
+
+energymat = zeros(param.Nsteps,1);
+timemat   = zeros(param.Nsteps,1);
+T1flagVec    = zeros(celldata.nMasterVertices,1);
+T1relaxstepcountVec = zeros(size(T1flagVec));
+
+Coordinates = zeros(celldata.nMasterVertices,2*param.Nsteps);
+Connectivity = cell(celldata.nCells,param.Nsteps);
+
+%% Time loop
+for tstep = 1:param.Nsteps
+    
+    %% Applying stretch (does nothing when not wanted)
+    applyStretchX;
+    
+    
+    %% initial energy
+    [energymat0] = getTissueEnergyClassical(celldata,param);
+    
+    %% Get forces based on the current configuration
+    % This function now includes elastic forces + edge-specific purse-string
+    celldata.f = getVertexForcesClassical(celldata,param,tstep);
+    
+    
+    % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    % --- NEW: PRIORITY 2 - VISUAL REPRESENTATION OF FORCES ---
+    % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    if param.plotForces && mod(tstep, param.plotForces_Interval) == 0
+        
+        figure(param.plotForces_FigHandle); % Plot in a dedicated window
+        clf; 
+        
+        % Plot the tissue first
+        plot3Dtissue(celldata.nCells, celldata.r, celldata.connec, param);
+        hold on;
+        
+        % Highlight the wound-edge cells
+        if ~isempty(woundEdgeCells)
+            p_wound = plot3Dtissue(length(woundEdgeCells), celldata.r, celldata.connec(woundEdgeCells), param);
+            set(p_wound, 'FaceColor', 'magenta', 'FaceAlpha', 0.5);
+        end
+        
+        % Get vertex and force data
+        r_x = celldata.r(:, 1);
+        r_y = celldata.r(:, 2);
+        f_x = celldata.f(:, 1);
+        f_y = celldata.f(:, 2);
+        
+        % Plot force vectors using quiver
+        quiver(r_x, r_y, f_x, f_y, 'r', 'AutoScaleFactor', param.plotForces_Scale); 
+        
+        title(['Forces at Timestep: ', num2str(tstep)]);
+        rectangle('Position',[0 0 param.Lx param.Ly]);
+        axis equal; % Ensure aspect ratio is correct
+        hold off;
+        
+        drawnow; % Force MATLAB to render the plot
+    end
+    % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    % --- END OF NEW SECTION ---
+    % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
+    
+    %% Update vertex positions while maintaining periodicity
+    celldata   = updateVertexPositions(celldata,param);
+    
+    %% Update cell area and perimeters from new vertex positions
+    celldata.A = getCellAreas(celldata,param);
+    [celldata.P, celldata.EdgeData] = getCellPerimeters(celldata.nCells,celldata.r,celldata.connec,param,0);
+    
+    %% Check for T1 transitions and update
+    [celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell, T1flagVec,T1relaxstepcountVec,param.nT1]   = checkT1transitions(celldata.nCells,celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell,param,T1flagVec,T1relaxstepcountVec,0);
+    
+    
+    %% Storing current state for plotting purposes
+    Coordinates(:,2*tstep - 1:2*tstep) = celldata.r;
+    Connectivity(:,tstep)= celldata.connec;
+    
+    %% Update time if no more T1 possible
+    param.Tsim = param.Tsim + param.deltat;
+    celldata.r0 = celldata.r;
+    
+    %% Update status
+    energymat(tstep) = getTissueEnergyClassical(celldata,param);
+    timemat(tstep)   = param.Tsim;
+    if tstep == 1
+        relenergychange  = (energymat(tstep) - energymat0)/ energymat0;
+    else
+        relenergychange  = (energymat(tstep) - energymat(tstep-1))/ energymat(tstep-1);
+    end
+    
+    PrintInformation;
+end
+
+%% Post-Processing
+figure(3)
+PlotTissueEvolution;
+
+% Plotting evolution of the energy
+figure(4); hold on; plot(timemat, energymat, 'LineWidth', 3.0); title('Energy vs time')

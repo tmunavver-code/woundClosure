@@ -1,0 +1,423 @@
+=== PlotTissueEvolution.m ===
+Docs:
+% Plotting evolution of tissue
+
+=== PrintInformation.m ===
+Docs:
+
+
+=== SelfPropelledParameters.m ===
+Docs:
+% T1 transition parameters
+
+=== SingleCellContractionParameters.m ===
+Docs:
+% T1 transition parameters
+
+=== StretchingParameters.m ===
+Docs:
+% T1 transition parameters
+
+=== applyStretchX.m ===
+Docs:
+%% Applying stretching
+
+=== boundaryVertices.m ===
+Function: function [celldata] = boundaryVertices(celldata,param)
+Docs:
+%BOUNDARYVERTICES Identifying the boundary vertices through the slaves
+
+=== checkInhibition.m ===
+Function: function flag = checkInhibition(indtoadd,coordx,coordy,R_inhibition, Lx, Ly)
+Docs:
+% flag = 0: No collision, flag = 1: Collision
+
+=== checkSelfIntersect.m ===
+Function: function [ celldata ] = checkSelfIntersect( celldata)
+Docs:
+%CHECKSELFINTERSECT Perform node swap in the case where internal elements self
+%intersect
+% for cellID = 1:celldata.nCells
+%      Barycenters = getCellBarycenter( cellID, celldata.connec, celldata.r );
+%      celldata.connec = rearrangeAnticlockwise( cellID,  celldata.connec,  celldata.r, Barycenters );
+% end
+
+=== checkT1transitions.m ===
+Function: function [coordinates, connectivity, edgedata,verttocell, T1flagVec,T1relaxstepcountVec, nT1]   = checkT1transitions(nCells,coordinates, connectivity, edgedata,verttocell,param,T1flagVec,T1relaxstepcountVec,imAugmented)
+Docs:
+%% checkT1transitions: Checks for and performs a T1 transition
+%
+% MODIFIED:
+% 1. Implements enhanced T1 intercalation (fluidity) at the wound margin
+%    by using a separate, more permissive tolerance (param.T1_TOL_wound).
+% 2. Fixes bug in T1flagVec logic: flags are now correctly applied to
+%    vertices (vertID1, vertID2) instead of the local edge index (j).
+% 3. Passes the triggered T1 tolerance ('current_T1_TOL') into
+%    performT1swap.
+%
+
+=== checkWoundIntercalations.m ===
+Function: function [celldata, T1flagVec, intercalation_happened, param] = checkWoundIntercalations(celldata, param, T1flagVec)
+Docs:
+%
+% VERSION 2.1 (Corrected):
+% - This is the "complete detachment" logic.
+% - It now returns the modified 'param' struct so the main
+%   script can update the 'cellIDtoContract' list for plotting.
+%
+% Flag to tell the main loop if we need to recalculate geometry
+
+=== findMasters.m ===
+Function: function [VertexSlaveToMastermap, augmentedCellMSmap] = findMasters(CoordsSlaves,CoordsMasters,Vsubset,Csubset,celldata, param)
+Docs:
+% Given a slave vertex, Vertexmap will give the global ID of it's
+%master
+
+=== functions2D/PlotTissueEvolution.m ===
+Docs:
+% Plotting evolution of tissue
+
+=== functions2D/PrintInformation.m ===
+Docs:
+
+
+=== functions2D/applyStretchX.m ===
+Docs:
+%% Applying stretching
+
+=== functions2D/boundaryVertices.m ===
+Function: function [celldata] = boundaryVertices(celldata,param)
+Docs:
+%BOUNDARYVERTICES Identifying the boundary vertices through the slaves
+
+=== functions2D/checkInhibition.m ===
+Function: function flag = checkInhibition(indtoadd,coordx,coordy,R_inhibition, Lx, Ly)
+Docs:
+% flag = 0: No collision, flag = 1: Collision
+
+=== functions2D/checkSelfIntersect.m ===
+Function: function [ celldata ] = checkSelfIntersect( celldata)
+Docs:
+%CHECKSELFINTERSECT Perform node swap in the case where internal elements self
+%intersect
+% for cellID = 1:celldata.nCells
+%      Barycenters = getCellBarycenter( cellID, celldata.connec, celldata.r );
+%      celldata.connec = rearrangeAnticlockwise( cellID,  celldata.connec,  celldata.r, Barycenters );
+% end
+
+=== functions2D/checkT1transitions.m ===
+Function: function [coordinates, connectivity, edgedata,verttocell, T1flagVec,T1relaxstepcountVec, nT1]   = checkT1transitions(nCells,coordinates, connectivity, edgedata,verttocell,param,T1flagVec,T1relaxstepcountVec,imAugmented)
+Docs:
+%% checkT1transitions: Checks for and performs a T1 transition
+
+=== functions2D/createWound.m ===
+Function: function [celldata, cellsToRemove] = createWound(celldata, woundShape, params, param)
+Docs:
+%CREATEWOUND Removes cells from celldata to create a wound of a specific shape.
+%   FINAL CORRECTED VERSION:
+%   - Calculates cell barycenters correctly for periodic boundary conditions.
+%   - Uses periodic distance to select cells for removal.
+% Step 1: Calculate the PERODIC geometric center (barycenter) of every cell
+
+=== functions2D/findMasters.m ===
+Function: function [VertexSlaveToMastermap, augmentedCellMSmap] = findMasters(CoordsSlaves,CoordsMasters,Vsubset,Csubset,celldata, param)
+Docs:
+% Given a slave vertex, Vertexmap will give the global ID of it's
+%master
+
+=== functions2D/findWoundEdgeCells.m ===
+Function: function [woundEdgeCells, woundEdges] = findWoundEdgeCells(celldata)
+Docs:
+%
+% High-performance replacement for findWoundEdgeCells.
+% Uses a containers.Map (hash map) to find free edges in O(N) time
+% instead of the original O(N^2) nested loop.
+%
+% A hash map to store edges.
+% Key: string (e.g., '10_25')
+% Value: {cellID, [v1, v2]}
+
+=== functions2D/genDataClassical.m ===
+Function: function celldata = genDataClassical(param)
+Docs:
+%getVoronoiTessellation: Generate voronoi tessellation
+% For random voronoi
+
+=== functions2D/getCellAreas.m ===
+Function: function A = getCellAreas(celldata, param)
+Docs:
+%% getCellAreas: provide cell areas
+
+=== functions2D/getCellBarycenter.m ===
+Function: function [ baryCoords ] = getCellBarycenter( cellID, Connectivity, AllverticesCoords )
+Docs:
+%GETCELLBARYCENTER Getting the barycenter position of a given cell
+
+=== functions2D/getCellDataWithinDomain.m ===
+Function: function [Vsubset, Csubset] = getCellDataWithinDomain(Ncells, V, C, closedPolygonsID)
+Docs:
+%% getCellDataWithinDomain: Extract Vertices and Cell data
+% V is the list of vertices, and C is the cell connectivity matrix
+% closedPolygonsID contains the list of cellIDs that are required in the
+% output voronoi diagram
+%% Process voronoi input to keep only the relevant vertices
+% those that appear in closedPolygonsID
+
+=== functions2D/getCellDataforPlottingwithoutPeriJumps.m ===
+Function: function [Cnew, Vnew] = getCellDataforPlottingwithoutPeriJumps(nCells, Coords, Connec, param)
+Docs:
+% Account for periodicity of cells when plotting, need to add vertices
+% based on the periodicity information
+
+=== functions2D/getCellPerimeters.m ===
+Function: function [P, EdgeData] = getCellPerimeters(nCells,coordinates,connectivity,param, imAugmented)
+Docs:
+%% getCellPerimeters: get cell perimeter
+
+=== functions2D/getPolygonalCellArea.m ===
+Function: function Acell = getPolygonalCellArea(celldata,cellID,param)
+Docs:
+%% get polygonal area of cellID
+
+=== functions2D/getPolygonalCellPerimeter.m ===
+Function: function [Pcell, EdgesCell] = getPolygonalCellPerimeter(coordinates,connectivityVec,param, imAugmented)
+Docs:
+% Modify verecoords acocuntin for peridicity
+
+=== functions2D/getT1cellIDs.m ===
+Function: function [cellID1, cellID2, cellID3, cellID4] = getT1cellIDs(node1, node2, verttocell,connectivity)
+Docs:
+% Find the cells corresponding to the edge to be flipped to perform the T1
+% transition.
+
+=== functions2D/getTile.m ===
+Function: function [tilex, tiley] = getTile(coordx,coordy,Lx,Ly)
+Docs:
+% Generate 9X9 tile
+
+=== functions2D/getTissueEnergyClassical.m ===
+Function: function totalenergy = getTissueEnergyClassical(celldata,param)
+Docs:
+%% getCurrentEnergy: returns total energyof the collection
+% get the total energy
+
+=== functions2D/getVertexForcesClassical.m ===
+Function: function f = getVertexForcesClassical(celldata,param,tstep)
+Docs:
+%% getVertexForces: get vertex forces from gradient of an energy functional
+
+=== functions2D/insertelem.m ===
+Function: function vect = insertelem(insertval, insertind, vect)
+Docs:
+% Assuming vect is a 1D vector, the function adds insertval at the
+% localtion insertind in the vect. If insertind is zero, then the element
+% is added at the end of the array
+
+=== functions2D/modifyVerticesForPeriodicity.m ===
+Function: function Vnew = modifyVerticesForPeriodicity(V,verticesmat,Lx,Ly)
+Docs:
+% update vertices coordinates based on peridicity for the currnt cell
+% vertices
+
+=== functions2D/performT1swap.m ===
+Function: function [coordinates, connectivity, edgedata,verttocell] = performT1swap(cellID1, cellID2, cellID3, cellID4, coordinates,connectivity,edgedata,verttocell, node1, node2, param,imAugmented)
+Docs:
+% Modify the nodal connectivity of idetified cellIDs and also update the
+% vertex to cell map accordingly
+
+=== functions2D/plot3Dtissue.m ===
+Function: function p = plot3Dtissue(nCells, Coords, Connec,param)
+Docs:
+
+
+=== functions2D/rearrangeAnticlockwise.m ===
+Function: function [ Connectivity ] = rearrangeAnticlockwise( cellID, Connectivity, AllverticesCoords, Barycenter )
+Docs:
+%REARRANGEANTICLOCKWISE Rearrange the cell vertices in an anticlockwise order
+
+=== functions2D/updateCellData.m ===
+Function: function celldata = updateCellData(x, x_prev, celldata)
+Docs:
+%% updateCellData: updates the cell data from current positions of the nodes
+
+=== functions2D/updateImagePositions.m ===
+Function: function [celldata, augT1flagVec,augT1relaxstepcountVec]   = updateImagePositions(celldata,augT1flagVec,augT1relaxstepcountVec,param)
+Docs:
+%% updateImagePositions: update image vertex positions
+% The images displace as their masters
+
+=== functions2D/updateMeshforPeriodicity.m ===
+Function: function [Vnew, Cnew] = updateMeshforPeriodicity(V, C, param)
+Docs:
+% removes periodic images of vertices and updates the Cell connectivity
+% information accordingly
+
+=== functions2D/updateVertexPositions.m ===
+Function: function celldata   = updateVertexPositions(celldata,param)
+Docs:
+%% updateVertexPositions: update current vertex positions
+% using the nodal force and viscosity coefficient, use backard Euler to
+% update the nodal positions
+
+=== genDataClassical.m ===
+Function: function celldata = genDataClassical(param)
+Docs:
+%getVoronoiTessellation: Generate voronoi tessellation
+% For random voronoi
+
+=== getCellAreas.m ===
+Function: function A = getCellAreas(celldata, param)
+Docs:
+%% getCellAreas: provide cell areas
+%
+% MODIFIED (Stable V2):
+% - Added a guard clause to skip area calculations for invalid cells
+%   (with < 3 vertices), setting their area to 0.
+%
+
+=== getCellBarycenter.m ===
+Function: function [ baryCoords ] = getCellBarycenter( cellID, Connectivity, AllverticesCoords )
+Docs:
+%GETCELLBARYCENTER Getting the barycenter position of a given cell
+
+=== getCellDataWithinDomain.m ===
+Function: function [Vsubset, Csubset] = getCellDataWithinDomain(Ncells, V, C, closedPolygonsID)
+Docs:
+%% getCellDataWithinDomain: Extract Vertices and Cell data
+% V is the list of vertices, and C is the cell connectivity matrix
+% closedPolygonsID contains the list of cellIDs that are required in the
+% output voronoi diagram
+%% Process voronoi input to keep only the relevant vertices
+% those that appear in closedPolygonsID
+
+=== getCellDataforPlottingwithoutPeriJumps.m ===
+Function: function [Cnew, Vnew] = getCellDataforPlottingwithoutPeriJumps(nCells, Coords, Connec, param)
+Docs:
+% Account for periodicity of cells when plotting, need to add vertices
+% based on the periodicity information
+
+=== getCellPerimeters.m ===
+Function: function [P, EdgeData] = getCellPerimeters(nCells,coordinates,connectivity,param, imAugmented)
+Docs:
+%% getCellPerimeters: get cell perimeter
+%
+% MODIFIED (Stable V2):
+% - Added a guard clause to skip perimeter calculations for invalid cells
+%   (with < 3 vertices), setting their perimeter to 0.
+%
+
+=== getPolygonalCellArea.m ===
+Function: function Acell = getPolygonalCellArea(celldata,cellID,param)
+Docs:
+%% get polygonal area of cellID
+
+=== getPolygonalCellPerimeter.m ===
+Function: function [Pcell, EdgesCell] = getPolygonalCellPerimeter(coordinates,connectivityVec,param, imAugmented)
+Docs:
+% Modify verecoords acocuntin for peridicity
+
+=== getT1cellIDs.m ===
+Function: function [cellID1, cellID2, cellID3, cellID4] = getT1cellIDs(node1, node2, verttocell,connectivity)
+Docs:
+% Find the cells corresponding to the edge to be flipped to perform the T1
+% transition.
+
+=== getTile.m ===
+Function: function [tilex, tiley] = getTile(coordx,coordy,Lx,Ly)
+Docs:
+% Generate 9X9 tile
+
+=== getTissueEnergyClassical.m ===
+Function: function totalenergy = getTissueEnergyClassical(celldata,param)
+Docs:
+%% getCurrentEnergy: returns total energyof the collection
+% get the total energy
+
+=== getVertexForcesClassical.m ===
+Function: function f = getVertexForcesClassical(celldata,param,tstep)
+Docs:
+%% getVertexForces: get vertex forces from gradient of an energy functional
+%
+% MODIFIED (Stable V2):
+% - Added a guard clause to skip force calculations for invalid cells
+%   (with < 3 vertices). This prevents the simulation from "blowing up".
+%
+
+=== insertelem.m ===
+Function: function vect = insertelem(insertval, insertind, vect)
+Docs:
+% Assuming vect is a 1D vector, the function adds insertval at the
+% localtion insertind in the vect. If insertind is zero, then the element
+% is added at the end of the array
+
+=== mainClassical.m ===
+Docs:
+%% Classical 2D vertex model allowing for T1 transitions
+% Simple code to simulate the classical vertex model based on a psuedo-energy
+% functional and nodal dissipative forces. The energy minimization also
+% allows for topological transitions of type T1.
+% Sohan Kale - Adam Ouzeri | September 9 2019
+% Modified -  Nikhil Walani October 19 2023
+
+=== modifyVerticesForPeriodicity.m ===
+Function: function Vnew = modifyVerticesForPeriodicity(V,verticesmat,Lx,Ly)
+Docs:
+% update vertices coordinates based on peridicity for the currnt cell
+% vertices
+
+=== myMainClassical.m ===
+Docs:
+%% Classical 2D vertex model for wound healing
+%
+% MODIFIED:
+% 1. ADDED: Force visualization plot inside the main time loop.
+%
+
+=== myMainClassicalWoundOnly.m ===
+Docs:
+%% Classical 2D vertex model for wound healing
+
+=== performT1swap.m ===
+Function: function [coordinates, connectivity, edgedata,verttocell] = performT1swap(cellID1, cellID2, cellID3, cellID4, coordinates,connectivity,edgedata,verttocell, node1, node2, param, imAugmented, T1_TOL_triggered)
+Docs:
+%
+% MODIFIED:
+% 1. Function now accepts 'T1_TOL_triggered' as the last argument.
+% 2. Replaced 'param.T1_TOL' with 'T1_TOL_triggered' for vertex bounce.
+%
+
+=== plot3Dtissue.m ===
+Function: function p = plot3Dtissue(nCells, Coords, Connec,param)
+Docs:
+% --- NEW: Fix for "white hole" bug ---
+% Only try to draw valid polygons (3+ vertices)
+
+=== rearrangeAnticlockwise.m ===
+Function: function [ Connectivity ] = rearrangeAnticlockwise( cellID, Connectivity, AllverticesCoords, Barycenter )
+Docs:
+%REARRANGEANTICLOCKWISE Rearrange the cell vertices in an anticlockwise order
+
+=== updateCellData.m ===
+Function: function celldata = updateCellData(x, x_prev, celldata)
+Docs:
+%% updateCellData: updates the cell data from current positions of the nodes
+
+=== updateImagePositions.m ===
+Function: function [celldata, augT1flagVec,augT1relaxstepcountVec]   = updateImagePositions(celldata,augT1flagVec,augT1relaxstepcountVec,param)
+Docs:
+%% updateImagePositions: update image vertex positions
+% The images displace as their masters
+
+=== updateMeshforPeriodicity.m ===
+Function: function [Vnew, Cnew] = updateMeshforPeriodicity(V, C, param)
+Docs:
+% removes periodic images of vertices and updates the Cell connectivity
+% information accordingly
+
+=== updateVertexPositions.m ===
+Function: function celldata   = updateVertexPositions(celldata,param)
+Docs:
+%% updateVertexPositions: update current vertex positions
+% using the nodal force and viscosity coefficient, use backard Euler to
+% update the nodal positions
+
