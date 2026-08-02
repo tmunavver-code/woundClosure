@@ -72,7 +72,7 @@ plot3Dtissue(celldata.nCells, celldata.r, celldata.connec,param);
 hold on;
 % Optional: Highlight the purse-string cells
 p_wound = plot3Dtissue(length(woundEdgeCells), celldata.r, celldata.connec(woundEdgeCells), param);
-set(p_wound, 'FaceColor', 'magenta', 'FaceAlpha', 0.5);
+set(p_wound(isgraphics(p_wound)), 'FaceColor', 'magenta', 'FaceAlpha', 0.5);
 title('Initial State with Wound');
 rectangle('Position',[0 0 param.Lx param.Ly]);
 hold off;
@@ -150,7 +150,7 @@ for tstep = 1:param.Nsteps
         % Highlight the wound-edge cells
         if ~isempty(woundEdgeCells)
             p_wound = plot3Dtissue(length(woundEdgeCells), celldata.r, celldata.connec(woundEdgeCells), param);
-            set(p_wound, 'FaceColor', 'magenta', 'FaceAlpha', 0.5);
+            set(p_wound(isgraphics(p_wound)), 'FaceColor', 'magenta', 'FaceAlpha', 0.5);
         end
         
         % Get vertex and force data
@@ -214,3 +214,13 @@ PlotTissueEvolution;
 
 % Plotting evolution of the energy
 figure(4); hold on; plot(timemat, energymat, 'LineWidth', 3.0); title('Energy vs time')
+
+%% Save Results
+if ~exist('results', 'dir')
+    mkdir('results');
+end
+save('results/myMainClassical_workspace.mat');
+if ishandle(2), saveas(figure(2), 'results/myMainClassical_initial_state.png'); end
+if ishandle(3), saveas(figure(3), 'results/myMainClassical_tissue_evolution.png'); end
+if ishandle(4), saveas(figure(4), 'results/myMainClassical_energy_vs_time.png'); end
+if ishandle(10), saveas(figure(10), 'results/myMainClassical_forces.png'); end

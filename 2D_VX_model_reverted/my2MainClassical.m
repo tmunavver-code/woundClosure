@@ -122,7 +122,7 @@ plot3Dtissue(celldata.nCells, celldata.r, celldata.connec,param);
 hold on;
 % Optional: Highlight the purse-string cells
 p_wound = plot3Dtissue(length(woundEdgeCells), celldata.r, celldata.connec(woundEdgeCells), param);
-set(p_wound, 'FaceColor', 'magenta', 'FaceAlpha', 0.5);
+set(p_wound(isgraphics(p_wound)), 'FaceColor', 'magenta', 'FaceAlpha', 0.5);
 title('Initial State with Wound');
 rectangle('Position',[0 0 param.Lx param.Ly]);
 hold off;
@@ -176,7 +176,7 @@ for tstep = 1:param.Nsteps
         % Highlight the wound-edge cells
         if ~isempty(param.cellIDtoContract)
             p_wound = plot3Dtissue(length(param.cellIDtoContract), celldata.r, celldata.connec(param.cellIDtoContract), param);
-            set(p_wound, 'FaceColor', 'magenta', 'FaceAlpha', 0.5);
+            set(p_wound(isgraphics(p_wound)), 'FaceColor', 'magenta', 'FaceAlpha', 0.5);
         end
         
         % Get vertex and force data
@@ -279,3 +279,4 @@ saveas(fig4, fig4_path);
 close(fig4); % Close the hidden figure
 
 fprintf('All plots saved to folder: %s\n', saveDirName);
+save(fullfile(saveDirName, 'my2MainClassical_workspace.mat'));

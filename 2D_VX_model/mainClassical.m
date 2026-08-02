@@ -101,3 +101,12 @@ PlotTissueEvolution;
 % Plotting evolution of the energy
 figure(4); hold on; plot(timemat, energymat, 'LineWidth', 3.0); title('Energy vs time')
 
+%% Save Results
+if ~exist('results', 'dir')
+    mkdir('results');
+end
+save('results/mainClassical_workspace.mat');
+if ishandle(2), saveas(figure(2), 'results/mainClassical_initial_state.png'); end
+if ishandle(3), saveas(figure(3), 'results/mainClassical_tissue_evolution.png'); end
+if ishandle(4), saveas(figure(4), 'results/mainClassical_energy_vs_time.png'); end
+
