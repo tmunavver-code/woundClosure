@@ -1,4 +1,4 @@
-function [coordinates, connectivity, edgedata,verttocell, T1flagVec,T1relaxstepcountVec, nT1]   = checkT1transitions(nCells,coordinates, connectivity, edgedata,verttocell,param,T1flagVec,T1relaxstepcountVec,imAugmented)
+function [coordinates, connectivity, edgedata,verttocell, T1flagVec,T1relaxstepcountVec, nT1, T1ForceLog]   = checkT1transitions(nCells,coordinates, connectivity, edgedata,verttocell,param,T1flagVec,T1relaxstepcountVec,imAugmented, edgeForceData, tstep, T1ForceLog)
 %% checkT1transitions: Checks for and performs a T1 transition
 %
 % MODIFIED:
@@ -11,6 +11,10 @@ function [coordinates, connectivity, edgedata,verttocell, T1flagVec,T1relaxstepc
 %
 
 nT1 = param.nT1;
+
+if nargin < 12
+    T1ForceLog = [];
+end
 
 if imAugmented == 1
     label = 'augmented';
@@ -53,6 +57,20 @@ for cellID = 1:nCells
             
             % --- Now, check edge length with the correct tolerance ---
             if edgelenmat(j) < current_T1_TOL
+                
+                % --- NEW: Log forces before flip ---
+                v_min = min(vertID1, vertID2);
+                v_max = max(vertID1, vertID2);
+                if nargin >= 10 && ~isempty(edgeForceData)
+                    idx = find([edgeForceData.v1] == v_min & [edgeForceData.v2] == v_max, 1);
+                    if ~isempty(idx)
+                        tension_per_L = edgeForceData(idx).total_tension / edgeForceData(idx).length;
+                        pressure = edgeForceData(idx).pressure_area;
+                        % log: [tstep, v1, v2, length, tension_per_length, pressure]
+                        T1ForceLog(end+1, :) = [tstep, v_min, v_max, edgelenmat(j), tension_per_L, pressure];
+                    end
+                end
+                % --- END NEW ---
                 
                 % Find the surrounding cells to the edge to be flipped
                 [cellID1, cellID2, cellID3, cellID4] = getT1cellIDs(vertID1, vertID2,  verttocell,connectivity);

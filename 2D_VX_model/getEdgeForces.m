@@ -27,6 +27,8 @@ function edgeForceData = getEdgeForces(celldata, param, tstep)
 %     .total_tension   - total effective tension = tension_peri + tension_purse
 %     .force_tangent   - [fx, fy] tangential force vector along the edge
 %     .force_normal    - [fx, fy] normal (pressure) force vector on the edge
+%     .force_tangent_per_length - [fx, fy] tangential force vector per unit edge length
+%     .force_normal_per_length  - [fx, fy] normal force vector per unit edge length
 %     .cellIDs         - list of cell IDs sharing this edge
 %     .isWoundEdge     - boolean, true if this edge is on the wound margin
 
@@ -105,6 +107,7 @@ edgeForceData(nEdges) = struct('v1', 0, 'v2', 0, 'midpoint', [0 0], ...
     'tension_peri', 0, 'pressure_area', 0, 'tension_purse', 0, ...
     'total_tension', 0, ...
     'force_tangent', [0 0], 'force_normal', [0 0], ...
+    'force_tangent_per_length', [0 0], 'force_normal_per_length', [0 0], ...
     'cellIDs', [], 'isWoundEdge', false);
 
 % Purse-string tension (with ramp)
@@ -164,9 +167,15 @@ for i = 1:nEdges
         
         % Normal force (pressure pushing outward from edge midpoint)
         force_normal = pressure_area * edgeLen * normal;
+        
+        % Force vectors per unit edge length
+        force_tangent_per_length = force_tangent / edgeLen;
+        force_normal_per_length = force_normal / edgeLen;
     else
         force_tangent = [0, 0];
         force_normal = [0, 0];
+        force_tangent_per_length = [0, 0];
+        force_normal_per_length = [0, 0];
     end
     
     % Store
@@ -181,6 +190,8 @@ for i = 1:nEdges
     edgeForceData(i).total_tension = total_tension;
     edgeForceData(i).force_tangent = force_tangent;
     edgeForceData(i).force_normal = force_normal;
+    edgeForceData(i).force_tangent_per_length = force_tangent_per_length;
+    edgeForceData(i).force_normal_per_length = force_normal_per_length;
     edgeForceData(i).cellIDs = entry.cellIDs;
     edgeForceData(i).isWoundEdge = isWound;
 end

@@ -6,14 +6,16 @@ function plotEdgeForces(celldata, param, edgeForceData, tstep, plotType)
 %   param         - parameter struct
 %   edgeForceData - output from getEdgeForces()
 %   tstep         - current timestep (for title)
-%   plotType      - string: 'tension', 'pressure', 'total', 'vectors', or 'all'
+%   plotType      - string: 'tension', 'pressure', 'total', 'vectors',
+%                   'vectors_per_length', or 'all'
 %
 % PLOT TYPES:
-%   'tension'  - Color edges by their line tension (perimeter + purse-string)
-%   'pressure' - Color edges by the area pressure acting across them
-%   'total'    - Color edges by total tension magnitude
-%   'vectors'  - Draw force arrows (tangential + normal) at edge midpoints
-%   'all'      - Generate all four plots in subplots
+%   'tension'            - Color edges by their line tension (perimeter + purse-string)
+%   'pressure'           - Color edges by the area pressure acting across them
+%   'total'              - Color edges by total tension magnitude
+%   'vectors'            - Draw force arrows (tangential + normal) at edge midpoints
+%   'vectors_per_length' - Draw force arrows per unit edge length at edge midpoints
+%   'all'                - Generate all four plots in subplots
 
 if nargin < 5
     plotType = 'all';
@@ -53,6 +55,10 @@ switch plotType
     case 'vectors'
         plotEdgeVectors(celldata, param, edgeForceData, tstep);
         title(sprintf('Edge Force Vectors (t=%d)', tstep));
+        
+    case 'vectors_per_length'
+        plotEdgeVectorsPerLength(celldata, param, edgeForceData, tstep);
+        title(sprintf('Edge Force Vectors per Unit Length (t=%d)', tstep));
         
     otherwise
         plotEdgeColorMap(celldata, param, edgeForceData, 'total_tension', tstep);
@@ -223,4 +229,87 @@ g2 = linspace(1, 0, n - half)';
 b2 = linspace(1, 0, n - half)';
 
 cmap = [r1 g1 b1; r2 g2 b2];
+end
+
+
+%% ========================================================================
+% HELPER: Force vector arrows per unit edge length
+% =========================================================================
+function plotEdgeVectorsPerLength(celldata, param, edgeForceData, tstep)
+
+Lx = param.Lx;
+Ly = param.Ly;
+nEdges = length(edgeForceData);
+
+hold on;
+
+% Draw tissue background
+plot3Dtissue(celldata.nCells, celldata.r, celldata.connec, param);
+rectangle('Position', [0 0 Lx Ly], 'EdgeColor', [0.5 0.5 0.5], 'LineStyle', '--');
+
+% Collect midpoints and per-length force vectors
+midX = zeros(nEdges, 1);
+midY = zeros(nEdges, 1);
+ftX  = zeros(nEdges, 1);
+ftY  = zeros(nEdges, 1);
+fnX  = zeros(nEdges, 1);
+fnY  = zeros(nEdges, 1);
+
+for i = 1:nEdges
+    if edgeForceData(i).length < 1e-10
+        continue;
+    end
+    midX(i) = edgeForceData(i).midpoint(1);
+    midY(i) = edgeForceData(i).midpoint(2);
+    ftX(i)  = edgeForceData(i).force_tangent_per_length(1);
+    ftY(i)  = edgeForceData(i).force_tangent_per_length(2);
+    fnX(i)  = edgeForceData(i).force_normal_per_length(1);
+    fnY(i)  = edgeForceData(i).force_normal_per_length(2);
+end
+
+% Compute magnitudes
+magT = sqrt(ftX.^2 + ftY.^2);
+magN = sqrt(fnX.^2 + fnY.^2);
+maxT = max(magT);
+maxN = max(magN);
+
+% Manual scaling to avoid quiver auto-scale distortions
+% We want the maximum arrow length to be about 0.5 units in the plot
+target_length = 0.5;
+
+if maxN > 1e-12
+    scaleN = target_length / maxN;
+else
+    scaleN = 1;
+end
+fnX_scaled = fnX * scaleN;
+fnY_scaled = fnY * scaleN;
+
+if maxT > 1e-12
+    scaleT = target_length / maxT;
+else
+    scaleT = 1;
+end
+ftX_scaled = ftX * scaleT;
+ftY_scaled = ftY * scaleT;
+
+if scaleT > scaleN * 2
+    tangLabel = sprintf('Tangential/length (x%.1f)', scaleT / scaleN);
+else
+    tangLabel = 'Tangential/length';
+end
+
+% Plot tangential forces per length (green) - scale = 0 turns OFF auto-scaling
+hT = quiver(midX, midY, ftX_scaled, ftY_scaled, 0, 'g', 'LineWidth', 1.5, 'MaxHeadSize', 0.5);
+
+% Plot normal forces per length (blue) - scale = 0 turns OFF auto-scaling
+hN = quiver(midX, midY, fnX_scaled, fnY_scaled, 0, 'b', 'LineWidth', 1.2, 'MaxHeadSize', 0.5);
+
+% Use explicit handles so legend colors are correct
+legend([hT, hN], {tangLabel, 'Normal/length'}, 'Location', 'best');
+
+axis equal;
+xlim([-0.5 Lx + 0.5]);
+ylim([-0.5 Ly + 0.5]);
+hold off;
 end

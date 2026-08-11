@@ -69,6 +69,9 @@ snapshotTimesteps = [1, round(param.Nsteps/4), round(param.Nsteps/2), ...
                      round(3*param.Nsteps/4), param.Nsteps];
 snapshotCount = 0;
 
+T1ForceLog = []; % Columns: [tstep, vertID1, vertID2, length_at_flip, tension_per_length, pressure]
+
+
 for tstep = 1:param.Nsteps
     
     applyStretchX;
@@ -90,11 +93,14 @@ for tstep = 1:param.Nsteps
     celldata.A = getCellAreas(celldata, param);
     [celldata.P, celldata.EdgeData] = getCellPerimeters(celldata.nCells, celldata.r, celldata.connec, param, 0);
     
+    % --- NEW: Compute edge forces here for logging ---
+    currentEdgeForces = getEdgeForces(celldata, param, tstep);
+    
     if param.enableT1transitions
         [celldata.r, celldata.connec, celldata.EdgeData, celldata.verttocell, ...
-         T1flagVec, T1relaxstepcountVec, param.nT1] = ...
+         T1flagVec, T1relaxstepcountVec, param.nT1, T1ForceLog] = ...
             checkT1transitions(celldata.nCells, celldata.r, celldata.connec, ...
-            celldata.EdgeData, celldata.verttocell, param, T1flagVec, T1relaxstepcountVec, 0);
+            celldata.EdgeData, celldata.verttocell, param, T1flagVec, T1relaxstepcountVec, 0, currentEdgeForces, tstep, T1ForceLog);
     end
     
     Coordinates(:, 2*tstep - 1:2*tstep) = celldata.r;
@@ -126,7 +132,7 @@ simTime = toc(totalsimtime);
 fprintf('Total simulation time: %.2f minutes\n', simTime / 60);
 
 %% 4 - Save results
-saveDir = 'results/edge_forces';
+saveDir = 'results/edge_forces_new';
 if ~exist(saveDir, 'dir')
     mkdir(saveDir);
 end
@@ -145,6 +151,13 @@ plotEdgeForces(celldata, param, finalEdgeForces, param.Nsteps, 'vectors');
 title(sprintf('Edge Force Vectors at Timestep %d', param.Nsteps));
 saveas(fig2, fullfile(saveDir, 'edge_force_vectors_final.png'));
 close(fig2);
+
+% --- Plot 2b: Force vectors per unit edge length at final state ---
+fig2b = figure('visible', 'off', 'Position', [100 100 800 700]);
+plotEdgeForces(celldata, param, finalEdgeForces, param.Nsteps, 'vectors_per_length');
+title(sprintf('Edge Force Vectors per Unit Length at Timestep %d', param.Nsteps));
+saveas(fig2b, fullfile(saveDir, 'edge_force_vectors_per_length_final.png'));
+close(fig2b);
 
 % --- Plot 3: Edge tension evolution across snapshots ---
 fig3 = figure('visible', 'off', 'Position', [100 100 1400 300*snapshotCount]);
@@ -170,6 +183,31 @@ xlabel('Time');
 ylabel('Free Energy');
 saveas(fig4, fullfile(saveDir, 'energy_vs_time.png'));
 close(fig4);
+
+% --- Plot A: T1 Force vs Length Scatter ---
+if ~isempty(T1ForceLog)
+    figA = figure('visible', 'off', 'Position', [100 100 1000 400]);
+    subplot(1,2,1);
+    scatter(T1ForceLog(:, 4), T1ForceLog(:, 5), 40, 'g', 'filled');
+    xlabel('Edge Length at Flip'); ylabel('Tangential Tension / Length');
+    title('T1 Transitions: Tangential Force');
+    grid on;
+    
+    subplot(1,2,2);
+    scatter(T1ForceLog(:, 4), T1ForceLog(:, 6), 40, 'b', 'filled');
+    xlabel('Edge Length at Flip'); ylabel('Normal Pressure');
+    title('T1 Transitions: Normal Force');
+    grid on;
+    
+    sgtitle('Forces at the Moment of T1 Transition');
+    saveas(figA, fullfile(saveDir, 't1_forces_vs_length.png'));
+    close(figA);
+end
+
+% --- Plot B: Trepat Validation (Spatial Force Field) ---
+figB = validateTrepatForces(finalEdgeForces, param, param.Nsteps);
+saveas(figB, fullfile(saveDir, 'trepat_validation_spatial.png'));
+close(figB);
 
 % --- Save workspace ---
 save(fullfile(saveDir, 'edge_force_workspace.mat'));

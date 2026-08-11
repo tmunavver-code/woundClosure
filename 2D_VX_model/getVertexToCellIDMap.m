@@ -1,16 +1,12 @@
-function verttocell = getVertexToCellIDMap(nVertices, nCells, connec)
-    % GETVERTEXTOCELLIDMAP Creates a mapping from vertex ID to the cells that share it.
-    verttocell = cell(nVertices, 1);
-    for cellID = 1:nCells
-        vertices = connec{cellID};
-        for i = 1:length(vertices)
-            v = vertices(i);
-            if v > 0 && v <= nVertices
-                verttocell{v}(end+1) = cellID;
-            end
-        end
-    end
-    for i = 1:nVertices
-        verttocell{i} = unique(verttocell{i});
-    end
+function vertocellmap = getVertexToCellIDMap(Nvertices, nCells,connectivity)
+% provides vertex to cell number map for later use
+
+vertocellmap = cell(Nvertices,1);
+
+for cellID = 1:nCells
+	verticesmat = connectivity{cellID};
+	for vertmatind = 1:length(verticesmat)
+		vertID = verticesmat(vertmatind);
+		vertocellmap{vertID} = [vertocellmap{vertID}, cellID];
+	end
 end
