@@ -20,13 +20,20 @@ param.T1_TOL_wound = 0.2;     % permissive tolerance for wound-edge cells
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
+% %%%%%%%%%%%%%%%%% Force-Based Transition Parameters %%%%%%%%%%%%%%%%%%%%%%%
+param.useForceBasedTransitions = true;
+param.k_off0 = 1.0;
+param.f_beta = 1.0;
+param.f_beta_length_slope = 1.0;
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 % plotting parameters
 param.nVisualisation = 50;     % frequency of current state visualisation
 
 % simulation time parameters
 param.deltat   = 0.01;      % initial timestep
 param.Tsim     = 0;         % simulation time
-param.Nsteps   = 1000;       % simulation time (You may want to increase this)
+param.Nsteps   = 3000;       % Increased for wound closure (was 1000)
 param.isBoundaryFixed = 0;  % fixed boundary doesn't allow for periodic jumps
 
 % cells parameters
@@ -54,8 +61,8 @@ param.cellIDstoTrack = 0;
 
 
 % %%%%%%%%%%%%%%%%%%%%% NEW: Edge-Specific Purse-String Parameters %%%%%%%%%%%%%%%%%%
-param.lambda_purse_string = 2.0;  % Max tension of the purse-string cable
-param.t_ramp_purse_string = 100;  % Number of timesteps to ramp up to max tension
+param.lambda_purse_string = 4.0;  % Increased for wound closure (was 2.0)
+param.t_ramp_purse_string = 50;   % Faster ramp-up (was 100)
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 

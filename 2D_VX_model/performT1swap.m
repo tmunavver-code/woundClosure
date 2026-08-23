@@ -20,58 +20,72 @@ normNewvec = norm(newPos2 - newPos1);
 if cellID1 ~= -1
     vertices = connectivity{cellID1};
     node2ind = find(vertices == node2);
-    vertices(node2ind) = [];
-    connectivity{cellID1} = vertices;
-    
-    % Removing the edge between node1 and node2 and recalculating edge
-    % distance
-    node1ind = find(vertices == node1);
-    edgedata{cellID1}(node1ind) = [];
-    [~,edgedata{cellID1}] = getPolygonalCellPerimeter(coordinates,connectivity{cellID1},param, imAugmented);
-    
-    % Remove cell1 from node 2
-    vtc = verttocell{node2};
-    cellID1ind = find(vtc == cellID1);
-    vtc(cellID1ind) = [];
-    verttocell{node2} = vtc;
+    if ~isempty(node2ind)
+        vertices(node2ind) = [];
+        connectivity{cellID1} = vertices;
+        
+        % Removing the edge between node1 and node2 and recalculating edge
+        % distance
+        node1ind = find(vertices == node1);
+        if ~isempty(node1ind) && node1ind <= length(edgedata{cellID1})
+            edgedata{cellID1}(node1ind) = [];
+        end
+        [~,edgedata{cellID1}] = getPolygonalCellPerimeter(coordinates,connectivity{cellID1},param, imAugmented);
+        
+        % Remove cell1 from node 2
+        vtc = verttocell{node2};
+        cellID1ind = find(vtc == cellID1);
+        vtc(cellID1ind) = [];
+        verttocell{node2} = vtc;
+    end
 end
 
 % Cell 2 (remove node1)
 if cellID2 ~= -1
     vertices = connectivity{cellID2};
     node1ind = find(vertices == node1);
-    vertices(node1ind) = [];
-    connectivity{cellID2} = vertices;
-    
-    % Removing the edge between node1 and node2 and recalculating edge
-    % distance
-    node2ind = find(vertices == node2);
-    edgedata{cellID2}(node2ind) = [];
-    [~,edgedata{cellID2}] = getPolygonalCellPerimeter(coordinates,connectivity{cellID2},param, imAugmented);
+    if ~isempty(node1ind)
+        vertices(node1ind) = [];
+        connectivity{cellID2} = vertices;
+        
+        % Removing the edge between node1 and node2 and recalculating edge
+        % distance
+        node2ind = find(vertices == node2);
+        if ~isempty(node2ind) && node2ind <= length(edgedata{cellID2})
+            edgedata{cellID2}(node2ind) = [];
+        end
+        [~,edgedata{cellID2}] = getPolygonalCellPerimeter(coordinates,connectivity{cellID2},param, imAugmented);
 
-    % Remove cell2 from node 1
-    vtc = verttocell{node1};
-    cellID2ind = find(vtc == cellID2);
-    vtc(cellID2ind) = [];
-    verttocell{node1} = vtc;
+        % Remove cell2 from node 1
+        vtc = verttocell{node1};
+        cellID2ind = find(vtc == cellID2);
+        vtc(cellID2ind) = [];
+        verttocell{node1} = vtc;
+    end
 end
 
 % Cell 3 (add node2 before node1)
 if cellID3 ~= -1
     vertices = connectivity{cellID3};
     node1ind = find(vertices == node1);
-    vertices = insertelem(node2, node1ind , vertices);
-    connectivity{cellID3} = vertices;
-    
-    % Adding the new edge and recalculating edge distance
-    EdgeLength = norm(Pos2 - Pos1);
-    EdgeVec = edgedata{cellID3};
-    EdgeVec = insertelem(EdgeLength,node1ind,EdgeVec);
-    edgedata{cellID3} = EdgeVec;
-    [~,edgedata{cellID3}] = getPolygonalCellPerimeter(coordinates,connectivity{cellID3},param, imAugmented);
-   
-    % add cell3 to node 2
-    verttocell{node2} = [verttocell{node2}, cellID3];
+    if ~isempty(node1ind)
+        vertices = insertelem(node2, node1ind , vertices);
+        connectivity{cellID3} = vertices;
+        
+        % Adding the new edge and recalculating edge distance
+        EdgeLength = norm(Pos2 - Pos1);
+        EdgeVec = edgedata{cellID3};
+        if node1ind <= length(EdgeVec) + 1
+            EdgeVec = insertelem(EdgeLength,node1ind,EdgeVec);
+        else
+            EdgeVec = [EdgeVec, EdgeLength];
+        end
+        edgedata{cellID3} = EdgeVec;
+        [~,edgedata{cellID3}] = getPolygonalCellPerimeter(coordinates,connectivity{cellID3},param, imAugmented);
+       
+        % add cell3 to node 2
+        verttocell{node2} = [verttocell{node2}, cellID3];
+    end
     
     
 end
@@ -80,18 +94,24 @@ end
 if cellID4 ~= -1
     vertices = connectivity{cellID4};
     node2ind = find(vertices == node2);
-    vertices = insertelem(node1, node2ind , vertices);
-    connectivity{cellID4} = vertices;
-    
-    % Adding the new edge and recalculating edge distance
-    EdgeLength = norm(Pos2 - Pos1);
-    EdgeVec = edgedata{cellID4};
-    EdgeVec = insertelem(EdgeLength,node2ind,EdgeVec);
-    edgedata{cellID4} = EdgeVec;
-    [~,edgedata{cellID4}] = getPolygonalCellPerimeter(coordinates,connectivity{cellID4},param, imAugmented);
-    
-    % add cell4 to node 1
-    verttocell{node1} = [verttocell{node1}, cellID4];
+    if ~isempty(node2ind)
+        vertices = insertelem(node1, node2ind , vertices);
+        connectivity{cellID4} = vertices;
+        
+        % Adding the new edge and recalculating edge distance
+        EdgeLength = norm(Pos2 - Pos1);
+        EdgeVec = edgedata{cellID4};
+        if node2ind <= length(EdgeVec) + 1
+            EdgeVec = insertelem(EdgeLength,node2ind,EdgeVec);
+        else
+            EdgeVec = [EdgeVec, EdgeLength];
+        end
+        edgedata{cellID4} = EdgeVec;
+        [~,edgedata{cellID4}] = getPolygonalCellPerimeter(coordinates,connectivity{cellID4},param, imAugmented);
+        
+        % add cell4 to node 1
+        verttocell{node1} = [verttocell{node1}, cellID4];
+    end
     
 
 end

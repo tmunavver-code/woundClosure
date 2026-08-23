@@ -1,4 +1,4 @@
-function [celldata, T1flagVec, intercalation_happened, param] = checkWoundIntercalations(celldata, param, T1flagVec)
+function [celldata, T1flagVec, intercalation_happened, param] = checkWoundIntercalations(celldata, param, T1flagVec, edgeForceData, tstep)
 %
 % VERSION 2.1 (Corrected):
 % - This is the "complete detachment" logic.
@@ -34,7 +34,48 @@ for i = 1:size(woundEdges, 1)
     vec(2) = vec(2) - param.Ly * round(vec(2) / param.Ly);
     L = norm(vec);
     
-    if L < param.L_intercalation_thresh
+    do_flip = false;
+    
+    if isfield(param, 'useForceBasedTransitions') && param.useForceBasedTransitions
+        % Force-Based logic: length is still a NECESSARY pre-condition.
+        % The wound edge must already be short — force raises/lowers the probability.
+        if L < param.L_intercalation_thresh
+            v_min = min(v1_master, v2_orphan);
+            v_max = max(v1_master, v2_orphan);
+            
+            if nargin >= 4 && ~isempty(edgeForceData)
+                idx = find([edgeForceData.v1] == v_min & [edgeForceData.v2] == v_max, 1);
+                if ~isempty(idx)
+                    force_normal_per_length = edgeForceData(idx).pressure_area;
+                    
+                    % F_drive = normal pressure per length (peeling force)
+                    F_drive = force_normal_per_length;
+                    
+                    % f_beta decreases as L shrinks → self-accelerating near collapse
+                    f_beta_eff = max(param.f_beta - param.f_beta_length_slope * (param.L_intercalation_thresh - L), 0.01);
+                    
+                    k_off = param.k_off0 * exp(F_drive / f_beta_eff);
+                    P_flip = 1 - exp(-param.deltat * k_off);
+                    
+                    if rand() < P_flip
+                        do_flip = true;
+                    end
+                else
+                    % Edge not found in force data — fall back to kinematic rule
+                    do_flip = true;
+                end
+            else
+                do_flip = true;  % No force data available — use kinematic rule
+            end
+        end
+    else
+        % Kinematic logic
+        if L < param.L_intercalation_thresh
+            do_flip = true;
+        end
+    end
+    
+    if do_flip
         
         % --- 2. IDENTIFY ALL PLAYERS ---
         cells_at_v1 = verttocell{v1_master};

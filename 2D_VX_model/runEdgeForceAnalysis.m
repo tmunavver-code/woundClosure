@@ -80,8 +80,11 @@ for tstep = 1:param.Nsteps
     
     celldata.f = getVertexForcesClassical(celldata, param, tstep);
     
+    % --- Compute edge forces for Force-Based Transitions ---
+    currentEdgeForces = getEdgeForces(celldata, param, tstep);
+    
     if param.enableWoundIntercalations
-        [celldata, T1flagVec, intercalation_happened, param] = checkWoundIntercalations(celldata, param, T1flagVec);
+        [celldata, T1flagVec, intercalation_happened, param] = checkWoundIntercalations(celldata, param, T1flagVec, currentEdgeForces, tstep);
         if intercalation_happened
             celldata.A = getCellAreas(celldata, param);
             [celldata.P, celldata.EdgeData] = getCellPerimeters(celldata.nCells, celldata.r, celldata.connec, param, 0);
@@ -93,14 +96,12 @@ for tstep = 1:param.Nsteps
     celldata.A = getCellAreas(celldata, param);
     [celldata.P, celldata.EdgeData] = getCellPerimeters(celldata.nCells, celldata.r, celldata.connec, param, 0);
     
-    % --- NEW: Compute edge forces here for logging ---
-    currentEdgeForces = getEdgeForces(celldata, param, tstep);
-    
+    % The currentEdgeForces is now computed above
     if param.enableT1transitions
         [celldata.r, celldata.connec, celldata.EdgeData, celldata.verttocell, ...
          T1flagVec, T1relaxstepcountVec, param.nT1, T1ForceLog] = ...
             checkT1transitions(celldata.nCells, celldata.r, celldata.connec, ...
-            celldata.EdgeData, celldata.verttocell, param, T1flagVec, T1relaxstepcountVec, 0, currentEdgeForces, tstep, T1ForceLog);
+            celldata.EdgeData, celldata.verttocell, param, T1flagVec, T1relaxstepcountVec, 0, currentEdgeForces, tstep, T1ForceLog, celldata);
     end
     
     Coordinates(:, 2*tstep - 1:2*tstep) = celldata.r;

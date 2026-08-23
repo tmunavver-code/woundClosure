@@ -1,0 +1,37 @@
+Force-Based Transitions Run — saturday_urvi_2026-08-15
+==========================================================
+Date: 18-Aug-2026 13:29:54
+Case: fluid
+p0 = 3.90
+Lx x Ly = 15 x 15
+Nsteps = 1000, dt = 0.0100
+useForceBasedTransitions = 1
+k_off0 = 1.000, f_beta = 1.000, f_beta_length_slope = 1.000
+enableT1transitions = 1
+enableWoundIntercalations = 1
+lambda_purse_string = 2.00
+T1_TOL_bulk = 0.100, T1_TOL_wound = 0.200
+
+RESULTS:
+Total T1 transitions: 45
+Total simulation time: 7.26 minutes
+Final energy: 361.8681
+Final wound area: 33.0659
+
+Snapshots saved at timesteps: [1 50 100 150 200 250 300 350 400 450 500 550 600 650 700 750 800 850 900 950 1000]
+
+FILES IN THIS DIRECTORY:
+  01_edge_forces_final_4panel.png
+  02_force_per_length_final.png
+  03_force_vectors_final.png
+  04_tension_evolution.png
+  05_energy_vs_time.png
+  06_t1_forces_vs_length.png
+  07_trepat_single_snapshot.png
+  08_trepat_time_averaged.png
+  09_force_per_length_timeseries.png
+  10_force_per_length_histogram.png
+  11_wound_area_vs_time.png
+  12_wound_vs_bulk_force_per_length.png
+  snapshot_tXXXX.png (tissue + force/length at each snapshot)
+  workspace.mat

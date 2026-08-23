@@ -2,6 +2,9 @@ function [cellID1, cellID2, cellID3, cellID4] = getT1cellIDs(node1, node2, vertt
 % Find the cells corresponding to the edge to be flipped to perform the T1
 % transition.
 
+% Initialize outputs — guarantees all are assigned even if topology is invalid
+cellID1 = -1; cellID2 = -1; cellID3 = -1; cellID4 = -1;
+
 connectedcellsnode1 = verttocell{node1};
 connectedcellsnode2 = verttocell{node2};
 
@@ -40,13 +43,17 @@ else
 				elseif node2ind == node1prevind
 					cellID2 = cellID;
 				else
-					error('node1 and node2 are present, but not adjacent, somehow.\n')
+					% Corrupted topology: both nodes present but not adjacent
+					cellID1 = -1; cellID2 = -1; cellID3 = -1; cellID4 = -1;
+					return;
 				end
 			end
 		elseif ~isempty(node2ind)
 			cellID4 = cellID;
 		else
-			error('Cell has neither node1 or node 2.\n');
+			% Corrupted topology: cell has neither node
+			cellID1 = -1; cellID2 = -1; cellID3 = -1; cellID4 = -1;
+			return;
 		end
 	end
 end
