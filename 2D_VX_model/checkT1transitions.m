@@ -70,33 +70,38 @@ for cellID = 1:nCells
             % --- Now, check edge length with the correct tolerance ---
             % AND check Force-Based criterion if enabled
             do_flip = false;
-            
-            if isfield(param, 'useForceBasedTransitions') && param.useForceBasedTransitions
+
+            % BUG FIX: previously, when useForceBasedTransitions was true but
+            % the caller didn't pass edgeForceData (nargin<10, e.g. the
+            % myMainClassical.m call sites, which only pass 9 args), do_flip
+            % could never become true -- T1 was silently dead code. Now falls
+            % back to the kinematic rule whenever force data isn't available,
+            % matching the fallback checkWoundIntercalations.m already has.
+            if isfield(param, 'useForceBasedTransitions') && param.useForceBasedTransitions && nargin >= 10 && ~isempty(edgeForceData)
                 % Force-Based logic: length is still a NECESSARY pre-condition.
                 % Force modulates the probability, but the edge must be short first.
-                if nargin >= 10 && ~isempty(edgeForceData)
-                    v_min = min(vertID1, vertID2);
-                    v_max = max(vertID1, vertID2);
-                    idx = find([edgeForceData.v1] == v_min & [edgeForceData.v2] == v_max, 1);
-                    if ~isempty(idx)
-                        edge_len = edgeForceData(idx).length;
-                        
-                        % GATE 1: Edge must be shorter than the tolerance (length pre-condition)
-                        if edge_len < current_T1_TOL
-                            force_tangent_per_length = edgeForceData(idx).total_tension / edge_len;
-                            
-                            % Length/crowding modulation: f_beta decreases as edge shortens,
-                            % causing the probability to self-accelerate near collapse
-                            f_beta_eff = max(param.f_beta - param.f_beta_length_slope * (current_T1_TOL - edge_len), 0.01);
-                            
-                            % GATE 2: Bell's-law stochastic probability
-                            F_drive = force_tangent_per_length;
-                            k_off = param.k_off0 * exp(F_drive / f_beta_eff);
-                            P_flip = 1 - exp(-param.deltat * k_off);
-                            
-                            if rand() < P_flip
-                                do_flip = true;
-                            end
+                v_min = min(vertID1, vertID2);
+                v_max = max(vertID1, vertID2);
+                idx = find([edgeForceData.v1] == v_min & [edgeForceData.v2] == v_max, 1);
+                if ~isempty(idx)
+                    edge_len = edgeForceData(idx).length;
+
+                    % GATE 1: Edge must be shorter than the tolerance (length pre-condition)
+                    if edge_len < current_T1_TOL
+                        force_tangent_per_length = edgeForceData(idx).total_tension / edge_len;
+
+                        % Length/crowding modulation: f_beta decreases as edge shortens,
+                        % causing the probability to self-accelerate near collapse.
+                        % T1 gates on TANGENTIAL force -- uses the T1-specific scale.
+                        f_beta_eff = max(param.f_beta_T1 - param.f_beta_length_slope_T1 * (current_T1_TOL - edge_len), 0.01);
+
+                        % GATE 2: Bell's-law stochastic probability
+                        F_drive = force_tangent_per_length;
+                        k_off = param.k_off0 * exp(F_drive / f_beta_eff);
+                        P_flip = 1 - exp(-param.deltat * k_off);
+
+                        if rand() < P_flip
+                            do_flip = true;
                         end
                     end
                 end
@@ -165,8 +170,26 @@ for cellID = 1:nCells
                     [celldata_temp.P, celldata_temp.EdgeData] = getCellPerimeters(celldata_temp.nCells, celldata_temp.r, celldata_temp.connec, param, 0);
                     
                     E_new = getTissueEnergyClassical(celldata_temp, param);
-                    
-                    if E_new >= E_old
+                    dE = E_new - E_old;
+
+                    if dE < 0
+                        accept_swap = true;
+                    elseif isfield(param, 'T_eff_T1') && param.T_eff_T1 > 0
+                        % Metropolis-style acceptance: allow occasional
+                        % uphill moves instead of a strict always-downhill
+                        % rule, so the system can escape a locally-stuck
+                        % configuration via fluctuation and relax down
+                        % afterward (the way real active/thermal systems,
+                        % and Kaurin-Arroyo's stochastic bond-breaking,
+                        % can transiently do). T_eff_T1 sets the scale of
+                        % uphill jump this system tolerates -- calibrated
+                        % from this model's own logged dE, same approach
+                        % as f_beta_T1/f_beta_T2.
+                        P_accept_uphill = exp(-dE / param.T_eff_T1);
+                        accept_swap = (rand() < P_accept_uphill);
+                    else
+                        % No T_eff_T1 configured -- fall back to the old
+                        % strict always-downhill rule.
                         accept_swap = false;
                     end
                 end
@@ -191,6 +214,9 @@ for cellID = 1:nCells
                     break; % Break out of inner loop over edges
                 else
                     % Revert the swap
+                    if nargin >= 13 && ~isempty(celldata)
+                        fprintf(1, 'T1_REJECTED_DE: %f\n', dE);
+                    end
                     coordinates = coords_backup;
                     connectivity = conn_backup;
                     edgedata = edge_backup;

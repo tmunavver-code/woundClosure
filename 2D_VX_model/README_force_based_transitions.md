@@ -147,6 +147,19 @@ force-driven rule modeled on Kaurin–Arroyo (2022) bond-breaking kinetics.
 and a master switch `param.useForceBasedTransitions` so the old kinematic rule can be
 toggled for comparison.
 
+**Validated against Kaurin–Arroyo (2022, J. R. Soc. Interface 19:20220183):** their model
+resolves a genuine reaction–diffusion state, bond concentration `c1(s,t)`, which can
+either *self-stabilize* (diffusion-dominated regime: bonds concentrate as the patch
+shrinks, increasing effective fracture energy) or *runaway-fail* (reaction-dominated /
+"tear-out" regime, appropriate for short-lived, cytoskeleton-anchored bonds like
+cadherins — their §3.2). Our `f_beta_eff` shrinking with edge length is a phenomenological
+proxy for the reaction-dominated/tear-out limit only — we do not resolve a true diffusing
+`c1(s,t)` and therefore cannot reproduce their diffusion-dominated self-stabilizing regime.
+This is the biologically appropriate limit for cadherin junctions (their own choice for the
+cadherin case), so the simplification is defensible, but it should be stated explicitly
+rather than presented as the general mechanism. The `t_fail ∝ (F−Fc)^-2.2` runaway cited
+above is their fig. 5f fit in exactly this regime.
+
 **Acceptance check:** with `useForceBasedTransitions = false` the code reproduces the
 old behavior exactly; with it `true`, transition timing correlates with logged edge
 traction (high-traction edges flip preferentially), and the run remains numerically
@@ -217,3 +230,51 @@ solid→fluid crossover in closure behavior under one unchanged rule.
 - Preserve the old kinematic rule behind a toggle so every force result has a baseline
   to compare against.
 - T1 gates on tangential force; T2 gates on normal force. Do not conflate the two.
+
+---
+
+## Phase 5 — Active force terms beyond T1/T2 (validated against Tetley 2019 and Trepat 2014)
+
+The phases above only replace the *topological transition rule*. Two more mechanical
+ingredients were checked against the wound-healing literature and one gap was closed:
+
+**Purse-string tension — validated, matches Tetley SI exactly.** Tetley et al. (Nat. Phys.
+2019, SI eq. for `E`) use the identical energy functional
+`E = Σ K(A-A0)²/2 + Σ Γ P²/2 + Σ Λ_ij L_ij`, ramp the wound-margin line tension from `Λ0` to
+`Λps` over ~10 min post-ablation (SI Fig. 2d), and — critically — state their T1 rule as
+"if an edge length goes below `L_T1`, an intercalation occurs... *if it results in a lower
+energy*" (SI p.6). That is precisely our energy-gate in `checkT1transitions.m`; the force-
+based criterion in this doc extends their rule rather than replacing its logic. Our
+`lambda_purse_string` ramp (`getVertexForcesClassical.m`) implements the same ramp
+mechanism, and the line-tension force `F = Λ·(unit vector v1→v2)` is the correct negative
+gradient of `Λ·L_ij`.
+
+**Wound-directed crawling — was MISSING, now added.** Trepat et al. (Nat. Phys. 2014,
+"Forces driving epithelial wound healing") show wound closure has two temporally distinct
+mechanisms: an early outward-pointing traction layer (OPTL) from lamellipodial crawling of
+row-1 cells into the wound, and a later inward/tangential layer (IPTL) from purse-string
+tension transmitted to the substrate. Before this change, the model only had the
+purse-string/contractility side (`lambda_purse_string`, `ka_wound_factor`,
+`contractility_wound`) — there was no active, independent crawling force, i.e. the
+*kinematic-to-dynamical* gap. `getVertexForcesClassical.m` now
+applies `param.crawl_force0 * exp(-tstep/param.tau_decay_crawl)` per wound-margin cell,
+directed from that cell's barycenter toward the wound centroid, active from `t=0` and
+decaying on roughly the timescale that `lambda_purse_string` ramps up — reproducing the
+early-crawl/late-purse-string handoff. Toggle: `param.enableWoundCrawling`.
+Caveat (already correctly noted in `validateTrepatForces.m`): there is no substrate in this
+model, so this is a pattern-level analogy (two temporally offset active mechanisms), not a
+literal reproduction of traction-force magnitudes or the tangential-focal-adhesion
+mechanism Trepat identifies for the IPTL.
+
+**Still missing — myosin line-tension fluctuations (Tetley's fluidization source).** Tetley
+et al. drive spontaneous bulk T1s (their "tissue fluidity") with an Ornstein–Uhlenbeck noise
+term on every edge's line tension, `dΛ_ij/dt = -(Λ_ij - Λ0)/τ_m + ξ_ij(t)` (SI, "Line
+tension fluctuations"), on top of cell division. Our model has neither: `p0` alone shapes
+the energy landscape (correctly, per the `p0* ≈ 3.81` jamming mapping already in this doc)
+but does not by itself generate bulk activity — without fluctuations or division, bulk
+edges have no stochastic driver to explore short lengths, so intercalation may stay
+artificially confined to the actively contracting wound margin regardless of `p0`. This
+would matter most for reproducing Phase 3/4's row-resolved intercalation falloff and the
+solid→fluid closure crossover. Not implemented here — flagged as the next candidate change,
+pending a decision on scope (adds `τ_m`, `σ_m` to calibrate, and interacts with the
+already-tuned wound-margin parameters).

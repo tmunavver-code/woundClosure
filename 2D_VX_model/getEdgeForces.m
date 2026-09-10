@@ -34,8 +34,6 @@ function edgeForceData = getEdgeForces(celldata, param, tstep)
 
 Lx = param.Lx;
 Ly = param.Ly;
-ka = param.ka;
-rstiff = param.rstiff;
 p0 = param.p0;
 
 %% Step 1: Build a unique edge list with associated cell data
@@ -50,12 +48,34 @@ for cellID = 1:celldata.nCells
     
     Acell = celldata.A(cellID);
     Pcell = celldata.P(cellID);
-    
+
+    % Use this cell's own ka/rstiff, including the wound-margin boost --
+    % must match getVertexForcesClassical.m exactly, otherwise the forces
+    % used for gating disagree with the forces actually moving the
+    % vertices. FORCE-BASED STRATEGY (Phase F5): reads the ramped
+    % celldata.ka_wound_factor_current/contractility_wound_current state
+    % when present, same fallback rule as getVertexForcesClassical.m.
+    ka_cell = param.ka;
+    rstiff_cell = param.rstiff;
+    isWoundCell = isfield(param, 'cellIDtoContract') && ismember(cellID, param.cellIDtoContract);
+    if isWoundCell
+        if isfield(celldata, 'ka_wound_factor_current')
+            ka_cell = ka_cell * celldata.ka_wound_factor_current;
+        elseif isfield(param, 'ka_wound_factor')
+            ka_cell = ka_cell * param.ka_wound_factor;
+        end
+        if isfield(celldata, 'contractility_wound_current')
+            rstiff_cell = rstiff_cell / celldata.contractility_wound_current;
+        elseif isfield(param, 'contractility_wound')
+            rstiff_cell = rstiff_cell / param.contractility_wound;
+        end
+    end
+
     % Perimeter tension for this cell (scalar, same for all edges of this cell)
-    T_peri_cell = 2.0 / rstiff * (Pcell - p0);
-    
+    T_peri_cell = 2.0 / rstiff_cell * (Pcell - p0);
+
     % Area pressure for this cell
-    P_area_cell = 2.0 * ka * (Acell - 1.0);
+    P_area_cell = 2.0 * ka_cell * (Acell - 1.0);
     
     nVerts = length(vertices);
     for j = 1:nVerts
@@ -110,8 +130,13 @@ edgeForceData(nEdges) = struct('v1', 0, 'v2', 0, 'midpoint', [0 0], ...
     'force_tangent_per_length', [0 0], 'force_normal_per_length', [0 0], ...
     'cellIDs', [], 'isWoundEdge', false);
 
-% Purse-string tension (with ramp)
-if isfield(param, 'lambda_purse_string')
+% Purse-string tension. FORCE-BASED STRATEGY (Phase F1): reads the ramped
+% celldata.lambda_current when present (must match
+% getVertexForcesClassical.m, same reasoning as the ka/rstiff fix above),
+% falls back to the fixed-tstep ramp otherwise.
+if isfield(celldata, 'lambda_current')
+    current_lambda = celldata.lambda_current;
+elseif isfield(param, 'lambda_purse_string')
     current_lambda = param.lambda_purse_string * min(1.0, tstep / param.t_ramp_purse_string);
 else
     current_lambda = 0;

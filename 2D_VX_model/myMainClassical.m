@@ -64,6 +64,23 @@ end
 [woundEdgeCells, woundEdges] = findWoundEdgeCells(celldata);
 param.cellIDtoContract = woundEdgeCells; % <-- THIS IS STILL NEEDED for plot3Dtissue coloring
 celldata.woundEdges = woundEdges; % <-- THIS IS NOW THE IMPORTANT PART
+celldata.cellIDtoContract = woundEdgeCells;
+
+%%% Force-based closure state (see force_based_closure_strategy.md)
+% Kw0/tau_Kw/k_recruit come from SingleCellContractionParameters.m.
+[woundLoopVerts0, woundLoopValid0] = getOrderedWoundLoop(celldata.woundEdges);
+if woundLoopValid0
+    celldata_tmp0 = celldata;
+    celldata_tmp0.connec{celldata.nCells+1} = woundLoopVerts0;
+    celldata.woundArea0 = getPolygonalCellArea(celldata_tmp0, celldata.nCells+1, param);
+else
+    celldata.woundArea0 = 0; % no valid single wound loop -- Kw force stays off (see getOrderedWoundLoop.m)
+end
+celldata.Kw_current = param.Kw0;
+celldata.lambda_current = 0;
+celldata.crawl_current = 0;
+celldata.ka_wound_factor_current = 1;
+celldata.contractility_wound_current = 1;
 
 
 % Plotting initial state with the wound
@@ -86,6 +103,7 @@ energymat = zeros(param.Nsteps,1);
 timemat   = zeros(param.Nsteps,1);
 T1flagVec    = zeros(celldata.nMasterVertices,1);
 T1relaxstepcountVec = zeros(size(T1flagVec));
+T1ForceLog = [];
 
 Coordinates = zeros(celldata.nMasterVertices,2*param.Nsteps);
 Connectivity = cell(celldata.nCells,param.Nsteps);
@@ -99,95 +117,160 @@ for tstep = 1:param.Nsteps
     
     %% initial energy
     [energymat0] = getTissueEnergyClassical(celldata,param);
-    
+
+    %% Force-based closure state updates (see force_based_closure_strategy.md)
+    % Kw decays analytically; purse-string tension, crawl force, and
+    % margin contractility are all recruited via feedback ODEs gated on
+    % how much of that decay has happened, instead of independent fixed
+    % timers.
+    if isfield(celldata, 'woundArea0') && celldata.woundArea0 > 0
+        celldata.Kw_current = param.Kw0 * exp(-tstep * param.deltat / param.tau_Kw);
+        kw_fraction_decayed = 1 - celldata.Kw_current / param.Kw0;
+    else
+        kw_fraction_decayed = 1; % no wound (or invalid loop) -- nothing to gate on
+    end
+
+    target_lambda = param.lambda_purse_string * kw_fraction_decayed;
+    celldata.lambda_current = celldata.lambda_current + param.deltat * param.k_recruit * (target_lambda - celldata.lambda_current);
+
+    if param.lambda_purse_string > 0
+        celldata.crawl_current = param.crawl_force0 * max(0, 1 - celldata.lambda_current / param.lambda_purse_string);
+    else
+        celldata.crawl_current = param.crawl_force0;
+    end
+
+    target_ka_factor = 1 + (param.ka_wound_factor - 1) * kw_fraction_decayed;
+    celldata.ka_wound_factor_current = celldata.ka_wound_factor_current + param.deltat * param.k_recruit * (target_ka_factor - celldata.ka_wound_factor_current);
+
+    target_contractility_factor = 1 + (param.contractility_wound - 1) * kw_fraction_decayed;
+    celldata.contractility_wound_current = celldata.contractility_wound_current + param.deltat * param.k_recruit * (target_contractility_factor - celldata.contractility_wound_current);
+
     %% Get forces based on the current configuration
     % This function now includes elastic forces + edge-specific purse-string
     celldata.f = getVertexForcesClassical(celldata,param,tstep);
-    
 
 
-    % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % --- NEW: 3-CELL WOUND INTERCALATION (PRIORITY) ---
-    % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    if param.enableWoundIntercalations
-        
-        % --- MODIFIED: Capture 'param' as an output ---
-        [celldata, T1flagVec, intercalation_happened, param] = checkWoundIntercalations(celldata, param, T1flagVec);
-        
-        if intercalation_happened
-            celldata.A = getCellAreas(celldata,param);
-            [celldata.P, celldata.EdgeData] = getCellPerimeters(celldata.nCells,celldata.r,celldata.connec,param,0);
-        end
-    end
-    % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    
-    
-    %% Check for T1 transitions and update
-% ... (rest of the file) ...
-
-    
-    %% Check for T1 transitions and update
-    % This handles the 4-cell "fluidity" swaps
-    if param.enableT1transitions
-        [celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell, T1flagVec,T1relaxstepcountVec,param.nT1]   = checkT1transitions(celldata.nCells,celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell,param,T1flagVec,T1relaxstepcountVec,0);
-    end
-    
-    
-    %% Storing current state for plotting purposes
-    
     % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % ---- VISUAL REPRESENTATION OF FORCES ---
+    % Moved here (was after the position update) so the plotted force
+    % vectors are paired with the positions that actually produced them.
     % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     if param.plotForces && mod(tstep, param.plotForces_Interval) == 0
-        
+
         figure(param.plotForces_FigHandle); % Plot in a dedicated window
-        clf; 
-        
+        clf;
+
         % Plot the tissue first
         plot3Dtissue(celldata.nCells, celldata.r, celldata.connec, param);
         hold on;
-        
+
         % Highlight the wound-edge cells
         if ~isempty(woundEdgeCells)
             p_wound = plot3Dtissue(length(woundEdgeCells), celldata.r, celldata.connec(woundEdgeCells), param);
             set(p_wound(isgraphics(p_wound)), 'FaceColor', 'magenta', 'FaceAlpha', 0.5);
         end
-        
+
         % Get vertex and force data
         r_x = celldata.r(:, 1);
         r_y = celldata.r(:, 2);
         f_x = celldata.f(:, 1);
         f_y = celldata.f(:, 2);
-        
+
         % Plot force vectors using quiver
-        quiver(r_x, r_y, f_x, f_y, 'r', 'AutoScaleFactor', param.plotForces_Scale); 
-        
+        quiver(r_x, r_y, f_x, f_y, 'r', 'AutoScaleFactor', param.plotForces_Scale);
+
         title(['Forces at Timestep: ', num2str(tstep)]);
         rectangle('Position',[0 0 param.Lx param.Ly]);
         axis equal; % Ensure aspect ratio is correct
         hold off;
-        
+
         drawnow; % Force MATLAB to render the plot
     end
     % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % --- END OF NEW SECTION ---
-    % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    
-    
+
+
     %% Update vertex positions while maintaining periodicity
     celldata   = updateVertexPositions(celldata,param);
-    
+
     %% Update cell area and perimeters from new vertex positions
     celldata.A = getCellAreas(celldata,param);
     [celldata.P, celldata.EdgeData] = getCellPerimeters(celldata.nCells,celldata.r,celldata.connec,param,0);
-    
+
+
+    % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    % Compute per-edge forces ONCE on this step's fresh, self-consistent
+    % geometry and reuse for both transition checks below -- avoids gating
+    % on forces computed before this step's position update.
+    % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    edgeForceData = getEdgeForces(celldata, param, tstep);
+
+
+    % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    % --- 3-CELL WOUND INTERCALATION (PRIORITY) ---
+    % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    if param.enableWoundIntercalations
+
+        [celldata, T1flagVec, intercalation_happened, param] = checkWoundIntercalations(celldata, param, T1flagVec, edgeForceData, tstep);
+
+        if intercalation_happened
+            celldata.A = getCellAreas(celldata,param);
+            [celldata.P, celldata.EdgeData] = getCellPerimeters(celldata.nCells,celldata.r,celldata.connec,param,0);
+            % Geometry changed -- edgeForceData is now stale for the
+            % touched edges. Recompute before the T1 check below.
+            edgeForceData = getEdgeForces(celldata, param, tstep);
+        end
+    end
+    % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 
     %% Check for T1 transitions and update
+    % This handles the 4-cell "fluidity" swaps. Single call per step now
+    % (the previous duplicate pre/post-update call used a stale geometry
+    % snapshot for the first one and has been removed).
+    nT1_before = param.nT1;
     if param.enableT1transitions
-        % --- THIS IS THE ORIGINAL LINE, NOW INDENTED ---
-        [celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell, T1flagVec,T1relaxstepcountVec,param.nT1]   = checkT1transitions(celldata.nCells,celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell,param,T1flagVec,T1relaxstepcountVec,0);
+        [celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell, T1flagVec,T1relaxstepcountVec,param.nT1, T1ForceLog]   = ...
+            checkT1transitions(celldata.nCells,celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell,param,T1flagVec,T1relaxstepcountVec,0, edgeForceData, tstep, T1ForceLog, celldata);
     end
-   
+    if param.nT1 > nT1_before
+        % Bulk T1 rewired connectivity -- refresh the wound margin (see
+        % refreshWoundMargin.m).
+        [celldata, param] = refreshWoundMargin(celldata, param);
+    end
+
+    % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    % --- CELL DIVISION (force-based, third topological event type) ---
+    % See checkCellDivision.m / performCellDivision.m / force_based_closure_
+    % strategy.md. Adds new vertices (nMasterVertices grows), so every
+    % other per-vertex array sized at the OLD nMasterVertices must grow
+    % with it, or later indexing into celldata.r/celldata.f crashes.
+    % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    nMasterVerticesBefore = celldata.nMasterVertices;
+    nCellsBefore = celldata.nCells;
+    [celldata, param, division_happened] = checkCellDivision(celldata, param);
+    if division_happened
+        nNewVerts = celldata.nMasterVertices - nMasterVerticesBefore;
+        if nNewVerts > 0
+            T1flagVec(end+1:end+nNewVerts) = 0;
+            T1relaxstepcountVec(end+1:end+nNewVerts) = 0;
+            celldata.f(end+1:end+nNewVerts, :) = 0;
+            celldata.r0(end+1:end+nNewVerts, :) = celldata.r(end-nNewVerts+1:end, :);
+            Coordinates(end+1:end+nNewVerts, :) = 0;
+        end
+        nNewCells = celldata.nCells - nCellsBefore;
+        if nNewCells > 0
+            Connectivity(end+1:end+nNewCells, :) = {[]};
+        end
+        celldata.A = getCellAreas(celldata,param);
+        [celldata.P, celldata.EdgeData] = getCellPerimeters(celldata.nCells,celldata.r,celldata.connec,param,0);
+        % Division rewired connectivity and added cells -- refresh margin.
+        [celldata, param] = refreshWoundMargin(celldata, param);
+    end
+
+    %% Wound sealing (force + energy gated) -- retires cells from the
+    % margin as opposing sides come into contact. See checkWoundSealing.m.
+    [celldata, param, seal_happened] = checkWoundSealing(celldata, param, tstep);
+
     %% Storing current state for plotting purposes
     Coordinates(:,2*tstep - 1:2*tstep) = celldata.r;
     Connectivity(:,tstep)= celldata.connec;

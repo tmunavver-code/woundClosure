@@ -27,6 +27,38 @@ Function: function [celldata] = boundaryVertices(celldata,param)
 Docs:
 %BOUNDARYVERTICES Identifying the boundary vertices through the slaves
 
+=== checkCellDivision.m ===
+Function: function [celldata, param, division_happened] = checkCellDivision(celldata, param)
+Docs:
+%CHECKCELLDIVISION Force-based cell division: a cell that has grown past
+%an area threshold divides with a probability set by Bell's law on its
+%own area-elastic pressure, the same stochastic-gating pattern used for
+%T1 (checkT1transitions.m) and wound-margin turnover
+%(checkWoundIntercalations.m). A division is only committed if it lowers
+%total tissue energy (strict gate, no Metropolis uphill tolerance here,
+%unlike T1/T2) -- otherwise the trial is reverted and the next candidate
+%cell is tried.
+%
+% NOTE ON THIS CHOICE: Tetley et al. 2019 themselves treat division as an
+% active, non-equilibrium "source of activity" and do not gate it on
+% energy at all -- a strict downhill-only requirement will suppress most
+% divisions, since creating new perimeter generally costs energy
+% immediately. This condition was enforced as a stability criterion:
+% the wound-topology corruption traced separately (see checkWoundIntercalations.m)
+% was first observed at a timestep where a division and a wound intercalation
+% coincided, and this gate rejects the energetically-unfavorable
+% divisions that destabilize the boundary.
+%
+% Trigger: the cell's own current area exceeding param.Area_div_thresh,
+% combined with the same Bell's-law stochastic draw used everywhere else
+% in this codebase -- so cells under more area-elastic pressure (more
+% crowded/over-grown) are more likely to divide, not a uniform per-cell
+% random rate.
+%
+% Geometry: performCellDivision.m splits the cell along its short axis
+% (Tetley's own stated division geometry -- "division of elongated cells
+% along their short axis"), through the centroid.
+
 === checkInhibition.m ===
 Function: function flag = checkInhibition(indtoadd,coordx,coordy,R_inhibition, Lx, Ly)
 Docs:
@@ -43,7 +75,7 @@ Docs:
 % end
 
 === checkT1transitions.m ===
-Function: function [coordinates, connectivity, edgedata,verttocell, T1flagVec,T1relaxstepcountVec, nT1]   = checkT1transitions(nCells,coordinates, connectivity, edgedata,verttocell,param,T1flagVec,T1relaxstepcountVec,imAugmented)
+Function: function [coordinates, connectivity, edgedata,verttocell, T1flagVec,T1relaxstepcountVec, nT1, T1ForceLog]   = checkT1transitions(nCells,coordinates, connectivity, edgedata,verttocell,param,T1flagVec,T1relaxstepcountVec,imAugmented, edgeForceData, tstep, T1ForceLog, celldata)
 Docs:
 %% checkT1transitions: Checks for and performs a T1 transition
 %
@@ -57,7 +89,7 @@ Docs:
 %
 
 === checkWoundIntercalations.m ===
-Function: function [celldata, T1flagVec, intercalation_happened, param] = checkWoundIntercalations(celldata, param, T1flagVec)
+Function: function [celldata, T1flagVec, intercalation_happened, param] = checkWoundIntercalations(celldata, param, T1flagVec, edgeForceData, tstep)
 Docs:
 %
 % VERSION 2.1 (Corrected):
@@ -66,6 +98,40 @@ Docs:
 %   script can update the 'cellIDtoContract' list for plotting.
 %
 % Flag to tell the main loop if we need to recalculate geometry
+
+=== checkWoundSealing.m ===
+Function: function [celldata, param, seal_happened] = checkWoundSealing(celldata, param, tstep)
+Docs:
+%CHECKWOUNDSEALING Seal the wound where opposing margins have come into
+%contact -- the final step of closure, which retires cells from the wound
+%boundary.
+%
+% Gated exactly like the other three topological event types in this
+% model: a distance pre-condition, then a force-based Bell's-law
+% stochastic draw, then a Metropolis energy gate.
+%
+%   Gate 1 (geometry): two wound-margin vertices closer than
+%       param.L_seal_thresh that do NOT already share a cell. Requiring
+%       no shared cell is what makes this a merge ACROSS the wound gap
+%       (two different sides coming together) rather than a cell pinching
+%       itself in half, and it also guarantees no cell ends up listing
+%       the surviving vertex twice.
+%
+%   Gate 2 (force, Bell's law): F_drive is the closing force -- the
+%       component of each vertex's own net force directed at the other.
+%       Positive means the mechanics are actively pressing the two
+%       margins together, which is exactly when adhesion should form.
+%       Uses celldata.f, the same force field that moves the vertices, so
+%       the gate cannot disagree with the dynamics.
+%
+%   Gate 3 (energy): accept if the merge lowers tissue energy, otherwise
+%       accept with probability exp(-dE/T_eff_seal), as for T1/T2/division.
+
+=== cross3d.m ===
+Function: function c = cross3d(a, b)
+Docs:
+% CROSS3D Compute cross product of two 3D vectors.
+%   Works identically to MATLAB's built-in cross() for 1x3 or 3x1 vectors.
 
 === findMasters.m ===
 Function: function [VertexSlaveToMastermap, augmentedCellMSmap] = findMasters(CoordsSlaves,CoordsMasters,Vsubset,Csubset,celldata, param)
@@ -265,6 +331,11 @@ Docs:
 %getVoronoiTessellation: Generate voronoi tessellation
 % For random voronoi
 
+=== getAreaDerivative.m ===
+Function: function dA2d    = getAreaDerivative(vertexcoords,vertices,currVert,nextVert,prevVert)
+Docs:
+% derivative of cell area with respect to verex position
+
 === getCellAreas.m ===
 Function: function A = getCellAreas(celldata, param)
 Docs:
@@ -306,6 +377,78 @@ Docs:
 %   (with < 3 vertices), setting their perimeter to 0.
 %
 
+=== getCellPrincipalAxis.m ===
+Function: function [longAxisDir, shortAxisDir, centroid] = getCellPrincipalAxis(vertexcoords, vertices)
+Docs:
+%GETCELLPRINCIPALAXIS Long/short axis direction of a cell polygon via the
+%second-moment (shape) tensor of its vertices about the centroid.
+%
+% vertexcoords must already be periodicity-corrected for this cell (see
+% modifyVerticesForPeriodicity.m) before calling this.
+%
+% Returns unit vectors longAxisDir (larger eigenvalue -- the cell's
+% elongation direction) and shortAxisDir (smaller eigenvalue, orthogonal
+% to longAxisDir), plus the centroid used.
+
+=== getEdgeForces.m ===
+Function: function edgeForceData = getEdgeForces(celldata, param, tstep)
+Docs:
+%% getEdgeForces: Compute the force/tension acting along each cell edge
+%
+% In the classical vertex model, the energy is:
+%   E = sum_cells [ ka*(A - A0)^2 + (1/rstiff)*(P - p0)^2 ]
+%
+% The force contribution along an edge comes from two sources:
+%   1. PERIMETER TENSION: The perimeter elasticity term produces a line
+%      tension T_peri = 2/rstiff * (P - p0) along each edge. This acts
+%      to shorten/lengthen the edge depending on whether P > p0 or P < p0.
+%   2. AREA PRESSURE: The area elasticity term produces a pressure-like
+%      force normal to each edge. The magnitude is proportional to
+%      2*ka*(A - 1).
+%
+% Additionally, if wound purse-string forces are active, wound-edge
+% segments carry an extra contractile tension lambda.
+%
+% OUTPUT:
+%   edgeForceData - struct array (one entry per unique edge) with fields:
+%     .v1, .v2         - vertex indices defining the edge
+%     .midpoint        - [x, y] midpoint of the edge
+%     .edgeVec         - [dx, dy] vector from v1 to v2
+%     .length          - scalar length of the edge
+%     .tension_peri    - net perimeter tension along the edge (scalar, positive = contractile)
+%     .pressure_area   - net area pressure across the edge (scalar, positive = expansive)
+%     .tension_purse   - purse-string tension if wound edge, else 0
+%     .total_tension   - total effective tension = tension_peri + tension_purse
+%     .force_tangent   - [fx, fy] tangential force vector along the edge
+%     .force_normal    - [fx, fy] normal (pressure) force vector on the edge
+%     .force_tangent_per_length - [fx, fy] tangential force vector per unit edge length
+%     .force_normal_per_length  - [fx, fy] normal force vector per unit edge length
+%     .cellIDs         - list of cell IDs sharing this edge
+%     .isWoundEdge     - boolean, true if this edge is on the wound margin
+
+=== getOrderedWoundLoop.m ===
+Function: function [loopVertices, isValid] = getOrderedWoundLoop(woundEdges)
+Docs:
+%GETORDEREDWOUNDLOOP Reconstruct a single ordered vertex loop from an
+%unordered list of wound-margin edges (celldata.woundEdges, Nx2).
+%
+% findWoundEdgeCells.m returns the wound margin as an unordered edge
+% list. Area/area-derivative code (getPolygonalCellArea.m,
+% getAreaDerivative.m) needs an ordered vertex loop, the same way a
+% normal cell's celldata.connec{cellID} is ordered.
+%
+% Assumes the wound margin is a single simple closed loop (every vertex
+% has exactly degree 2 in this edge list) -- which is what the "no
+% spurious second wound" fix earlier in this project is supposed to
+% guarantee. If that assumption doesn't hold (degree != 2 anywhere, or
+% the walk doesn't close), isValid=false is returned and the caller
+% should skip applying any force this step rather than guess.
+
+=== getPerimeterDerivative.m ===
+Function: function dPeri = getPerimeterDerivative(vertexcoords,currVert,nextVert,prevVert)
+Docs:
+% get perimeter derivative
+
 === getPolygonalCellArea.m ===
 Function: function Acell = getPolygonalCellArea(celldata,cellID,param)
 Docs:
@@ -321,6 +464,7 @@ Function: function [cellID1, cellID2, cellID3, cellID4] = getT1cellIDs(node1, no
 Docs:
 % Find the cells corresponding to the edge to be flipped to perform the T1
 % transition.
+% Initialize outputs — guarantees all are assigned even if topology is invalid
 
 === getTile.m ===
 Function: function [tilex, tiley] = getTile(coordx,coordy,Lx,Ly)
@@ -333,6 +477,11 @@ Docs:
 %% getCurrentEnergy: returns total energyof the collection
 % get the total energy
 
+=== getTriangleArea.m ===
+Function: function A = getTriangleArea(vecp1,vecp2,vecp3)
+Docs:
+
+
 === getVertexForcesClassical.m ===
 Function: function f = getVertexForcesClassical(celldata,param,tstep)
 Docs:
@@ -342,6 +491,52 @@ Docs:
 % - Added a guard clause to skip force calculations for invalid cells
 %   (with < 3 vertices). This prevents the simulation from "blowing up".
 %
+
+=== getVertexToCellIDMap.m ===
+Function: function vertocellmap = getVertexToCellIDMap(Nvertices, nCells,connectivity)
+Docs:
+% provides vertex to cell number map for later use
+
+=== getWoundArea.m ===
+Function: function woundArea = getWoundArea(celldata, param)
+Docs:
+%GETWOUNDAREA Total wound area, by conservation of the periodic box:
+%
+%   sum(cell areas) + wound area = Lx * Ly
+%
+% The tissue tiles the whole periodic domain apart from the wound hole,
+% so the wound area is just whatever box area the cells do not cover.
+%
+% This replaces measuring the wound by tracing its boundary loop
+% (getOrderedWoundLoop.m), which assumes the margin is a single SIMPLE
+% closed loop -- every vertex of degree exactly 2. That assumption breaks
+% legitimately as a wound closes: the boundary can narrow to a waist and
+% pinch at a vertex, leaving that vertex with degree 4 and the wound in
+% two lobes. Loop tracing then reports "invalid" and the area trace goes
+% NaN for the rest of the run, even though the mesh is perfectly
+% consistent (verified: verttocell agreed with connec, and the pinch
+% vertex had even degree, at the step where this first occurred).
+%
+% Measuring by area conservation has no topology assumptions at all, so
+% it keeps working through pinches, multiple lobes, and final closure.
+
+=== insertVertexBetween.m ===
+Function: function [vertsOut, ok] = insertVertexBetween(vertsIn, vA, vB, newV)
+Docs:
+%INSERTVERTEXBETWEEN Insert newV strictly between vA and vB in a cyclic
+%vertex list, whichever order they appear in.
+%
+% Returns ok=false (and vertsIn unchanged) if vA and vB are not both
+% present and cyclically adjacent -- the caller must then abort whatever
+% topology change it was attempting rather than commit a corrupted mesh.
+%
+% Needed because a plain "insert before index of vA" is order-dependent:
+% adjacent cells traverse a shared edge in opposite winding, so inserting
+% before vA lands the new vertex OUTSIDE the vA-vB edge whenever the
+% neighbour happens to list them in the same order as the dividing cell.
+% That leaves the neighbour's edge unmatched against the daughter cell's
+% two half-edges, and findWoundEdgeCells.m then reports both as free
+% edges -- i.e. a spurious wound boundary appears in the bulk.
 
 === insertelem.m ===
 Function: function vect = insertelem(insertval, insertind, vect)
@@ -377,6 +572,21 @@ Docs:
 Docs:
 %% Classical 2D vertex model for wound healing
 
+=== performCellDivision.m ===
+Function: function [celldata, success] = performCellDivision(cellID, celldata, param)
+Docs:
+%PERFORMCELLDIVISION Split cellID into two daughter cells along its short
+%axis (cleavage line through the centroid, perpendicular to the cell's
+%long axis) -- matching Tetley et al. 2019's stated division geometry
+%("division of elongated cells along their short axis"), but triggered by
+%a force-based area criterion (see checkCellDivision.m) rather than their
+%fixed-rate cell-cycle clock.
+%
+% Returns success=false (celldata unchanged) if the short-axis line does
+% not cross exactly two edges of the polygon (e.g. a very non-convex
+% cell) -- skip rather than guess, consistent with the rest of this
+% codebase's topology-change guards.
+
 === performT1swap.m ===
 Function: function [coordinates, connectivity, edgedata,verttocell] = performT1swap(cellID1, cellID2, cellID3, cellID4, coordinates,connectivity,edgedata,verttocell, node1, node2, param, imAugmented, T1_TOL_triggered)
 Docs:
@@ -386,16 +596,209 @@ Docs:
 % 2. Replaced 'param.T1_TOL' with 'T1_TOL_triggered' for vertex bounce.
 %
 
+=== performWoundMarginT1.m ===
+Function: function [coordinates, connectivity, verttocell] = performWoundMarginT1(cellA, cellB, cellC, coordinates, connectivity, verttocell, v1_master, v2_orphan, param)
+Docs:
+%PERFORMWOUNDMARGINT1 Genuine T1-style neighbor swap at the wound margin,
+%treating the wound itself as the 4th "cell" in the tetrad -- matching
+%Tetley et al. 2019's own stated method ("the wound itself was treated as
+%a cell, meaning an intercalating tetrad was formed of three wound-edge
+%cells and the wound") and confirmed against their Supplementary Video 4:
+%a cell pushed off the wound margin remains a fully intact, normal cell,
+%it does not shrink or vanish.
+%
+% Mirrors performT1swap.m exactly for the three real cells involved; the
+% wound has no real connec/verttocell entry, so there is no "cellID2"
+% bookkeeping to do for it -- its new boundary falls out automatically
+% once the caller recomputes findWoundEdgeCells afterward.
+%
+%   cellA: currently borders both v1_master and v2_orphan (touches the
+%          wound along this edge). Loses v2_orphan -- pushed off the
+%          margin, stays a complete cell.
+%   cellB: borders v1_master only. Gains v2_orphan.
+%   cellC: borders v2_orphan only. Gains v1_master.
+
+=== performWoundSeal.m ===
+Function: function [coordinates, connectivity, verttocell, ok] = performWoundSeal(v1, v2, coordinates, connectivity, verttocell)
+Docs:
+%PERFORMWOUNDSEAL Merge two wound-margin vertices that lie on OPPOSITE
+%sides of a collapsing wound, sealing the wound at that point.
+%
+% This is the step that actually retires cells from the wound margin.
+% Without it the wound area can reach zero while the margin still reports
+% its full complement of cells and free edges: the hole collapses to a
+% degenerate sliver, but nothing ever converts those free edges into
+% ordinary shared edges, so no cell ever leaves the boundary. (Measured:
+% wound area 0.00% at step 700 with 15 margin cells / 22 free edges still
+% reported.)
+%
+% v1 survives and is moved to the midpoint; v2 is orphaned and every cell
+% referencing it is repointed to v1. Free edges on either side that had
+% v2 as an endpoint now meet cells from the other side at v1, so they
+% become internal edges and drop out of the free-edge set.
+%
+% Returns ok=false with nothing modified if the merge would produce a
+% degenerate (<3 vertex) cell.
+
 === plot3Dtissue.m ===
 Function: function p = plot3Dtissue(nCells, Coords, Connec,param)
 Docs:
 % --- NEW: Fix for "white hole" bug ---
 % Only try to draw valid polygons (3+ vertices)
 
+=== plotEdgeForces.m ===
+Function: function plotEdgeForces(celldata, param, edgeForceData, tstep, plotType)
+Docs:
+%% plotEdgeForces: Visualize force distribution on cell edges
+%
+% INPUTS:
+%   celldata      - cell data struct
+%   param         - parameter struct
+%   edgeForceData - output from getEdgeForces()
+%   tstep         - current timestep (for title)
+%   plotType      - string: 'tension', 'pressure', 'total', 'vectors',
+%                   'vectors_per_length', or 'all'
+%
+% PLOT TYPES:
+%   'tension'            - Color edges by their line tension (perimeter + purse-string)
+%   'pressure'           - Color edges by the area pressure acting across them
+%   'total'              - Color edges by total tension magnitude
+%   'vectors'            - Draw force arrows (tangential + normal) at edge midpoints
+%   'vectors_per_length' - Draw force arrows per unit edge length at edge midpoints
+%   'all'                - Generate all four plots in subplots
+
 === rearrangeAnticlockwise.m ===
 Function: function [ Connectivity ] = rearrangeAnticlockwise( cellID, Connectivity, AllverticesCoords, Barycenter )
 Docs:
 %REARRANGEANTICLOCKWISE Rearrange the cell vertices in an anticlockwise order
+
+=== refreshWoundMargin.m ===
+Function: function [celldata, param] = refreshWoundMargin(celldata, param)
+Docs:
+%REFRESHWOUNDMARGIN Recompute the wound margin (free-edge set and the list
+%of cells bordering it) from the CURRENT connectivity.
+%
+% MUST be called after ANY topology change -- bulk T1
+% (checkT1transitions.m), cell division (checkCellDivision.m), and
+% wound-margin turnover (checkWoundIntercalations.m) all rewire
+% connectivity and can change which cells border the wound.
+%
+% Before this existed, celldata.woundEdges / param.cellIDtoContract were
+% only refreshed inside checkWoundIntercalations.m on a successful
+% intercalation, so they went stale after every bulk T1 and every
+% division. Measured consequences of that staleness in a 1000-step run:
+%   - 477 of 487 wound-intercalation candidates that passed the
+%     force-based Bell's-law gate were then discarded because the cell
+%     actually bordering the wound edge was not in the stale
+%     cellIDtoContract list ("cellA ambiguous"), so margin turnover
+%     essentially stopped and the margin cell count froze.
+%   - The stale woundEdges set stopped matching the live connectivity,
+%     which is what made getOrderedWoundLoop fail and the wound-area
+%     trace go NaN partway through a run.
+%   - param.cellIDtoContract also selects which cells get the
+%     wound-margin contractility boost and purse-string tension, so a
+%     stale list means those active forces were being applied to the
+%     wrong cells -- a physics error, not just bookkeeping.
+
+=== runEdgeForceAnalysis.m ===
+Docs:
+%% runEdgeForceAnalysis: Standalone script to compute and visualize edge forces
+%
+% This script runs the full 2D vertex model simulation and, at the end,
+% computes the force distribution on every cell edge. It produces:
+%   1. A 4-panel figure showing perimeter tension, purse-string tension,
+%      total tension, and area pressure on each edge.
+%   2. A vector plot showing tangential + normal force arrows at edge midpoints.
+%   3. Saved results (workspace + figures) to results/edge_forces/
+%
+% Usage: Simply run this script in MATLAB from the 2D_VX_model directory.
+
+=== runForceBasedTransitions.m ===
+Docs:
+%% runForceBasedTransitions: Force-Based Transitions — Comprehensive Results
+%
+% Follows the strategy in README_force_based_transitions.md:
+%   Phase 1: Instrument & validate the force field
+%   Phase 2: Force-based transition criterion (Bell's law)
+%
+% Saves ALL results (plots, snapshots, workspace) to:
+%   results/wound_contractility/
+%
+% Key outputs:
+%   - Tissue snapshot photos at multiple timesteps (with forces per length)
+%   - Force-vs-length scatter at T1 transitions
+%   - Trepat spatial force profile (time-averaged)
+%   - Edge tension evolution color maps
+%   - Energy vs time
+%   - Per-edge force-per-length histograms
+%   - Wound area evolution
+%
+% Usage: Run in MATLAB from the 2D_VX_model directory.
+
+=== runForceClosureStrategy.m ===
+Docs:
+%% runForceClosureStrategy: Force-Based Closure Strategy — 1000-step run
+%
+% Follows force_based_closure_strategy.md (Phases F1/F2/F5) on top of the
+% Bell's-law force-based T1/T2 gating with Metropolis-style uphill
+% acceptance:
+%   - Wound-hole elastic resistance (Kw) decaying over tau_Kw
+%   - Purse-string / crawl / margin-contractility all recruited via
+%     feedback gated on Kw's decay, not fixed timers
+%   - T1 (checkT1transitions.m) / T2 (checkWoundIntercalations.m) gated
+%     on real per-edge forces (calibrated f_beta_T1/f_beta_T2), with
+%     occasional energy-increasing moves allowed (calibrated
+%     T_eff_T1/T_eff_T2)
+%
+% Saves ALL results to: results/force_closure_<today's date>/
+%   - energy_vs_time.png
+%   - ka_contractility_every_50_steps.png + .csv (wound-margin ka/rstiff
+%     ramp state sampled every 50 timesteps, plus the step-to-step delta)
+%   - wound_area_vs_time.png
+%   - initial_state.png / final_state.png
+%   - workspace.mat
+
+=== runMain.m ===
+Docs:
+%% runMain: Force-Based Closure Strategy Simulation
+%
+% Follows force_based_closure_strategy.md (Phases F1/F2/F5) on top of the
+% Bell's-law force-based T1/T2 gating with Metropolis-style uphill
+% acceptance:
+%   - Wound-hole elastic resistance (Kw) decaying over tau_Kw
+%   - Purse-string / crawl / margin-contractility all recruited via
+%     feedback gated on Kw's decay, not fixed timers
+%   - T1 (checkT1transitions.m) / T2 (checkWoundIntercalations.m) gated
+%     on real per-edge forces (calibrated f_beta_T1/f_beta_T2), with
+%     occasional energy-increasing moves allowed (calibrated
+%     T_eff_T1/T_eff_T2)
+%
+% Saves ALL results to: final_results/
+%   - energy_vs_time.png
+%   - ka_contractility_every_50_steps.png + .csv (wound-margin ka/rstiff
+%     ramp state sampled every 50 timesteps, plus the step-to-step delta)
+%   - wound_area_vs_time.png
+%   - initial_state.png / final_state.png
+%   - workspace.mat
+
+=== trimWoundCorner.m ===
+Function: function connectivity = trimWoundCorner(cellA, connectivity, cornerVertex)
+Docs:
+%TRIMWOUNDCORNER Remove a "corner" vertex from a wound-margin cell.
+%
+% A corner vertex is one where BOTH of its edges are wound-boundary
+% edges -- i.e. cellA is the only real cell touching it (both of its
+% other neighboring faces are already the wound). A standard 4-cell T1
+% handoff (performWoundMarginT1.m) has no partner cell to give a vertex
+% to in this configuration, which otherwise freezes margin turnover
+% entirely once the shrinking wound makes corners common (see the
+% surrounding checkWoundIntercalations.m comment for the empirical
+% symptom this fixes).
+%
+% Removing the corner vertex from cellA merges its two wound-boundary
+% edges into one longer edge -- cellA loses one vertex (the "spike" is
+% trimmed) but otherwise stays a completely normal, intact cell, exactly
+% like a standard T1: no cell is destroyed by this operation.
 
 === updateCellData.m ===
 Function: function celldata = updateCellData(x, x_prev, celldata)
@@ -420,4 +823,39 @@ Docs:
 %% updateVertexPositions: update current vertex positions
 % using the nodal force and viscosity coefficient, use backard Euler to
 % update the nodal positions
+
+=== validateTrepatForces.m ===
+Function: function fig = validateTrepatForces(edgeForceData, param, tstep, varargin)
+Docs:
+% validateTrepatForces: Validates the spatial force field against Trepat 2014.
+%
+% Computes radial and azimuthal components of edge forces with respect to
+% the wound center, bins them by radial distance, and plots the profile
+% with per-bin averaging, counts, and standard-error bars.
+%
+% USAGE:
+%   fig = validateTrepatForces(finalEdgeForces, param, tstep)
+%       Single-snapshot profile (noisy in small tissues).
+%
+%   fig = validateTrepatForces(snapshotArray, param, tstep, 'timeAverage', true)
+%       Pass a STRUCT ARRAY where each element has a .data field holding an
+%       edgeForceData struct (e.g. your edgeForceSnapshots), and all edges
+%       from all snapshots are pooled before binning. Strongly recommended:
+%       a single snapshot in a 15x15 box has too few edges per bin.
+%
+% OPTIONAL NAME-VALUE ARGS:
+%   'timeAverage'   (logical, default false) treat first arg as snapshot array
+%   'nBins'         (int, default [] -> auto) number of radial bins
+%   'minCount'      (int, default 3) bins with fewer edges are blanked (NaN)
+%   'minEdgeFrac'   (double, default 0.5) minimum edge length as a fraction of
+%                   param.T1_TOL_bulk; shorter edges are excluded to avoid the
+%                   F/L blow-up from near-degenerate edges.
+%
+% NOTE ON INTERPRETATION:
+%   There is no substrate in this model, so these radial/azimuthal edge-force
+%   components are an ANALOG of Trepat's substrate tractions, not a literal
+%   reproduction. Validate the PATTERN (a coherent azimuthal/tangential band
+%   just behind the wound edge, radial structure near the edge), not the
+%   absolute sign or magnitude.
+%% -------- Parse options --------
 

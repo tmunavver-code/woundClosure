@@ -16,6 +16,11 @@ verttocell = celldata.verttocell;
 woundEdges = celldata.woundEdges;
 woundCells = param.cellIDtoContract; % List of all wound cells
 
+% Energy BEFORE any change this call, used as the gate below. Computed
+% once since only one intercalation is now committed per call (see the
+% one-per-call fix below), so there is no risk of it going stale mid-loop.
+E_old = getTissueEnergyClassical(celldata, param);
+
 edges_to_remove_idx = []; % To track which wound edges get merged
 
 for i = 1:size(woundEdges, 1)
@@ -51,8 +56,9 @@ for i = 1:size(woundEdges, 1)
                     % F_drive = normal pressure per length (peeling force)
                     F_drive = force_normal_per_length;
                     
-                    % f_beta decreases as L shrinks → self-accelerating near collapse
-                    f_beta_eff = max(param.f_beta - param.f_beta_length_slope * (param.L_intercalation_thresh - L), 0.01);
+                    % f_beta decreases as L shrinks → self-accelerating near collapse.
+                    % T2 gates on NORMAL force (peeling) -- uses the T2-specific scale.
+                    f_beta_eff = max(param.f_beta_T2 - param.f_beta_length_slope_T2 * (param.L_intercalation_thresh - L), 0.01);
                     
                     k_off = param.k_off0 * exp(F_drive / f_beta_eff);
                     P_flip = 1 - exp(-param.deltat * k_off);
@@ -76,56 +82,158 @@ for i = 1:size(woundEdges, 1)
     end
     
     if do_flip
-        
+
         % --- 2. IDENTIFY ALL PLAYERS ---
+        % REDESIGNED (matching Tetley et al. 2019's own stated method,
+        % confirmed against their Supplementary Video 4: "the wound itself
+        % was treated as a cell, meaning an intercalating tetrad was
+        % formed of three wound-edge cells and the wound"). This is now a
+        % genuine T1-style neighbor swap with the wound playing the role
+        % of the 4th "cell" -- NOT the old merge-and-strip approach, which
+        % progressively shrank the margin cell toward degeneracy. In the
+        % video, a cell pushed off the margin remains a fully intact,
+        % normal cell elsewhere in the tissue; it never shrinks or
+        % vanishes from a single event.
+        %
+        %   cellA: the real cell bordering BOTH v1_master and v2_orphan
+        %          (touches the wound along this edge). Loses this edge --
+        %          pushed off the margin -- but stays a complete cell.
+        %   cellB: the other real cell at v1_master (not v2_orphan).
+        %          Gains v2_orphan.
+        %   cellC: the other real cell at v2_orphan (not v1_master).
+        %          Gains v1_master.
         cells_at_v1 = verttocell{v1_master};
         cells_at_v2 = verttocell{v2_orphan};
-        Cell_W_candidates = intersect(cells_at_v1, cells_at_v2);
-        Cell_W = intersect(Cell_W_candidates, woundCells);
-        
-        if length(Cell_W) ~= 1
+        cellA_candidates = intersect(cells_at_v1, cells_at_v2);
+        cellA = intersect(cellA_candidates, woundCells);
+
+        if length(cellA) ~= 1
             continue;
         end
-        
-        cells_to_rewire = setdiff(cells_at_v2, cells_at_v1);
-        
-        % --- 3. PERFORM VERTEX MERGE & ORPHAN ---
-        intercalation_happened = true;
-        
-        % A. Geometry: Move v2_orphan on top of v1_master
-        coordinates(v2_orphan, :) = coordinates(v1_master, :);
-        
-        % B. Connectivity (Re-wiring):
-        for j = 1:length(cells_to_rewire)
-            cell_idx = cells_to_rewire(j);
-            connec_list = connectivity{cell_idx};
-            connec_list(connec_list == v2_orphan) = v1_master;
-            connectivity{cell_idx} = connec_list;
+
+        % cellA must have at least 4 vertices -- it is about to lose one
+        % (v2_orphan) and a real cell must never drop below 3.
+        if length(connectivity{cellA}) < 4
+            continue;
         end
-        
-        % C. Connectivity (Fixing Cell_W):
-        % Remove BOTH vertices from Cell_W's list.
-        connec_list = connectivity{Cell_W};
-        connec_list(connec_list == v1_master) = [];
-        connec_list(connec_list == v2_orphan) = [];
-        connectivity{Cell_W} = connec_list;
-        
-        % D. Update Vert-To-Cell Map:
-        verttocell{v1_master} = unique([verttocell{v1_master}, cells_to_rewire]);
-        vtc_v1_list = verttocell{v1_master};
-        vtc_v1_list(vtc_v1_list == Cell_W) = [];
-        verttocell{v1_master} = vtc_v1_list;
-        verttocell{v2_orphan} = [];
-        
+
+        % cellB/cellC can legitimately not exist: if a vertex's OTHER edge
+        % (besides this candidate wound edge) is ALSO a wound edge, cellA
+        % is the only real cell touching it -- a genuine "corner"/spike of
+        % the margin poking into the wound. A 4-cell-style handoff has no
+        % partner to give a vertex to there. This is exactly what was
+        % freezing margin turnover once the shrinking wound made most
+        % remaining vertices corners rather than smooth 2-neighbor points
+        % (empirically: margin stuck at 13 cells from step ~300 onward in
+        % a 1000-step run, even as wound area kept falling toward zero).
+        %
+        % Fix: handle it as a second, distinct topological case -- trim
+        % the corner vertex out of cellA entirely (no handoff needed,
+        % since both its neighboring faces are already the wound; this
+        % merges the two wound edges meeting there into one). Still
+        % gated by the same force-based Bell's-law trigger above and the
+        % energy/Metropolis gate below -- only the geometric mechanics
+        % differ between the two cases.
+        cellB_candidates = setdiff(cells_at_v1, cellA);
+        cellC_candidates = setdiff(cells_at_v2, cellA);
+
+        if length(cellB_candidates) == 1 && length(cellC_candidates) == 1 && cellB_candidates(1) ~= cellC_candidates(1)
+            mode = 'handoff';
+            cellB = cellB_candidates(1);
+            cellC = cellC_candidates(1);
+        elseif isempty(cellB_candidates) && length(cellC_candidates) == 1
+            mode = 'trim_v1'; % v1_master is the corner
+        elseif isempty(cellC_candidates) && length(cellB_candidates) == 1
+            mode = 'trim_v2'; % v2_orphan is the corner
+        else
+            % Both ends are corners, or genuinely ambiguous topology --
+            % skip rather than guess; a neighboring edge will usually
+            % resolve this from the other side instead.
+            continue;
+        end
+
+        % --- 3. PERFORM THE SWAP (trial) ---
+        % Trial on local copies, gated on energy exactly as before -- only
+        % the mechanics of what a successful flip does have changed.
+        coords_trial = coordinates;
+        connec_trial = connectivity;
+        vtc_trial = verttocell;
+
+        switch mode
+            case 'handoff'
+                [coords_trial, connec_trial, vtc_trial] = performWoundMarginT1( ...
+                    cellA, cellB, cellC, coords_trial, connec_trial, vtc_trial, ...
+                    v1_master, v2_orphan, param);
+            case 'trim_v1'
+                connec_trial = trimWoundCorner(cellA, connec_trial, v1_master);
+                vtc_trial{v1_master} = [];
+            case 'trim_v2'
+                connec_trial = trimWoundCorner(cellA, connec_trial, v2_orphan);
+                vtc_trial{v2_orphan} = [];
+        end
+
+        % --- Energy gate ---
+        celldata_temp = celldata;
+        celldata_temp.r = coords_trial;
+        celldata_temp.connec = connec_trial;
+        celldata_temp.verttocell = vtc_trial;
+        celldata_temp.A = getCellAreas(celldata_temp, param);
+        [celldata_temp.P, celldata_temp.EdgeData] = getCellPerimeters(celldata_temp.nCells, celldata_temp.r, celldata_temp.connec, param, 0);
+        E_new = getTissueEnergyClassical(celldata_temp, param);
+        dE = E_new - E_old;
+
+        if dE < 0
+            accept_intercalation = true;
+        elseif isfield(param, 'T_eff_T2') && param.T_eff_T2 > 0
+            % Metropolis-style acceptance (see checkT1transitions.m for
+            % the same treatment and rationale) -- occasional uphill
+            % detachments allowed instead of a strict always-downhill rule.
+            P_accept_uphill = exp(-dE / param.T_eff_T2);
+            accept_intercalation = (rand() < P_accept_uphill);
+        else
+            accept_intercalation = false;
+        end
+
+        if ~accept_intercalation
+            % Rejected: leaves coordinates/connectivity/verttocell untouched,
+            % try the next candidate wound edge instead.
+            fprintf(1, 'T2_REJECTED_DE: %f\n', dE);
+            continue;
+        end
+
+        % --- Commit the trial ---
+        coordinates = coords_trial;
+        connectivity = connec_trial;
+        verttocell = vtc_trial;
+        intercalation_happened = true;
+
         % E. Mark Edge for Removal
         edges_to_remove_idx = [edges_to_remove_idx, i]; %#ok<AGROW>
-        
+
         % F. Set Relaxation Flag
         T1flagVec(v1_master) = 1;
-        
-        fprintf(1,'--- 3-Cell Intercalation Performed ---\n');
-        fprintf(1,'Cell %d fully detached from margin.\n', Cell_W);
-        fprintf(1,'Vertex %d merged into %d.\n', v2_orphan, v1_master);
+
+        switch mode
+            case 'handoff'
+                fprintf(1,'--- Wound-Margin T1 Intercalation Performed ---\n');
+                fprintf(1,'Cell %d pushed off the margin (wound-edge %d-%d), neighbors %d and %d take over.\n', cellA, v1_master, v2_orphan, cellB, cellC);
+            case 'trim_v1'
+                fprintf(1,'--- Wound-Margin Corner Trimmed ---\n');
+                fprintf(1,'Vertex %d (corner of cell %d) absorbed into the wound.\n', v1_master, cellA);
+            case 'trim_v2'
+                fprintf(1,'--- Wound-Margin Corner Trimmed ---\n');
+                fprintf(1,'Vertex %d (corner of cell %d) absorbed into the wound.\n', v2_orphan, cellA);
+        end
+        fprintf(1,'Energy change: %f\n', E_new - E_old);
+
+        % BUG FIX: process at most one intercalation per call. The
+        % original loop could commit many detachments per timestep off of
+        % a single stale copy of woundEdges/connectivity captured at the
+        % top of the function -- the same staleness issue
+        % README_force_based_transitions.md already flags for
+        % checkT1transitions.m ("Phase 1b", stale forces within a sweep).
+        % Empirically this is what let the margin grow instead of shrink.
+        break;
     end
 end
 
