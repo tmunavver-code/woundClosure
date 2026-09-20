@@ -1,18 +1,6 @@
 function [loopVertices, isValid] = getOrderedWoundLoop(woundEdges)
-%GETORDEREDWOUNDLOOP Reconstruct a single ordered vertex loop from an
-%unordered list of wound-margin edges (celldata.woundEdges, Nx2).
-%
-% findWoundEdgeCells.m returns the wound margin as an unordered edge
-% list. Area/area-derivative code (getPolygonalCellArea.m,
-% getAreaDerivative.m) needs an ordered vertex loop, the same way a
-% normal cell's celldata.connec{cellID} is ordered.
-%
-% Assumes the wound margin is a single simple closed loop (every vertex
-% has exactly degree 2 in this edge list) -- which is what the "no
-% spurious second wound" fix earlier in this project is supposed to
-% guarantee. If that assumption doesn't hold (degree != 2 anywhere, or
-% the walk doesn't close), isValid=false is returned and the caller
-% should skip applying any force this step rather than guess.
+% GETORDEREDWOUNDLOOP Reconstructs an ordered cyclic vertex loop from an
+% unordered list of wound margin edges (Nx2). Returns isValid=false if non-simple.
 
 isValid = false;
 loopVertices = [];

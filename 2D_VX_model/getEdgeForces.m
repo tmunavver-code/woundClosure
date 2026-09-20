@@ -1,36 +1,6 @@
 function edgeForceData = getEdgeForces(celldata, param, tstep)
-%% getEdgeForces: Compute the force/tension acting along each cell edge
-%
-% In the classical vertex model, the energy is:
-%   E = sum_cells [ ka*(A - A0)^2 + (1/rstiff)*(P - p0)^2 ]
-%
-% The force contribution along an edge comes from two sources:
-%   1. PERIMETER TENSION: The perimeter elasticity term produces a line
-%      tension T_peri = 2/rstiff * (P - p0) along each edge. This acts
-%      to shorten/lengthen the edge depending on whether P > p0 or P < p0.
-%   2. AREA PRESSURE: The area elasticity term produces a pressure-like
-%      force normal to each edge. The magnitude is proportional to
-%      2*ka*(A - 1).
-%
-% Additionally, if wound purse-string forces are active, wound-edge
-% segments carry an extra contractile tension lambda.
-%
-% OUTPUT:
-%   edgeForceData - struct array (one entry per unique edge) with fields:
-%     .v1, .v2         - vertex indices defining the edge
-%     .midpoint        - [x, y] midpoint of the edge
-%     .edgeVec         - [dx, dy] vector from v1 to v2
-%     .length          - scalar length of the edge
-%     .tension_peri    - net perimeter tension along the edge (scalar, positive = contractile)
-%     .pressure_area   - net area pressure across the edge (scalar, positive = expansive)
-%     .tension_purse   - purse-string tension if wound edge, else 0
-%     .total_tension   - total effective tension = tension_peri + tension_purse
-%     .force_tangent   - [fx, fy] tangential force vector along the edge
-%     .force_normal    - [fx, fy] normal (pressure) force vector on the edge
-%     .force_tangent_per_length - [fx, fy] tangential force vector per unit edge length
-%     .force_normal_per_length  - [fx, fy] normal force vector per unit edge length
-%     .cellIDs         - list of cell IDs sharing this edge
-%     .isWoundEdge     - boolean, true if this edge is on the wound margin
+%% getEdgeForces: Computes tension and pressure acting along each unique cell edge
+% Outputs struct array with perimeter tension, area pressure, purse string, and normal/tangent force vectors.
 
 Lx = param.Lx;
 Ly = param.Ly;
@@ -49,12 +19,7 @@ for cellID = 1:celldata.nCells
     Acell = celldata.A(cellID);
     Pcell = celldata.P(cellID);
 
-    % Use this cell's own ka/rstiff, including the wound-margin boost --
-    % must match getVertexForcesClassical.m exactly, otherwise the forces
-    % used for gating disagree with the forces actually moving the
-    % vertices. FORCE-BASED STRATEGY (Phase F5): reads the ramped
-    % celldata.ka_wound_factor_current/contractility_wound_current state
-    % when present, same fallback rule as getVertexForcesClassical.m.
+    % Use cell ka and rstiff including wound margin stiffening
     ka_cell = param.ka;
     rstiff_cell = param.rstiff;
     isWoundCell = isfield(param, 'cellIDtoContract') && ismember(cellID, param.cellIDtoContract);
@@ -130,10 +95,7 @@ edgeForceData(nEdges) = struct('v1', 0, 'v2', 0, 'midpoint', [0 0], ...
     'force_tangent_per_length', [0 0], 'force_normal_per_length', [0 0], ...
     'cellIDs', [], 'isWoundEdge', false);
 
-% Purse-string tension. FORCE-BASED STRATEGY (Phase F1): reads the ramped
-% celldata.lambda_current when present (must match
-% getVertexForcesClassical.m, same reasoning as the ka/rstiff fix above),
-% falls back to the fixed-tstep ramp otherwise.
+% Purse-string tension (feedback-recruited or fixed ramp)
 if isfield(celldata, 'lambda_current')
     current_lambda = celldata.lambda_current;
 elseif isfield(param, 'lambda_purse_string')

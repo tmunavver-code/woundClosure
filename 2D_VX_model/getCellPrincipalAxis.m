@@ -1,13 +1,6 @@
 function [longAxisDir, shortAxisDir, centroid] = getCellPrincipalAxis(vertexcoords, vertices)
-%GETCELLPRINCIPALAXIS Long/short axis direction of a cell polygon via the
-%second-moment (shape) tensor of its vertices about the centroid.
-%
-% vertexcoords must already be periodicity-corrected for this cell (see
-% modifyVerticesForPeriodicity.m) before calling this.
-%
-% Returns unit vectors longAxisDir (larger eigenvalue -- the cell's
-% elongation direction) and shortAxisDir (smaller eigenvalue, orthogonal
-% to longAxisDir), plus the centroid used.
+% GETCELLPRINCIPALAXIS Computes principal long and short axis directions and
+% centroid of a cell polygon using the second-moment shape tensor.
 
 pts = vertexcoords(vertices, :);
 centroid = mean(pts, 1);

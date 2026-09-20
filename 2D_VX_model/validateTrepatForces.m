@@ -1,34 +1,7 @@
 function fig = validateTrepatForces(edgeForceData, param, tstep, varargin)
-% validateTrepatForces: Validates the spatial force field against Trepat 2014.
-%
-% Computes radial and azimuthal components of edge forces with respect to
-% the wound center, bins them by radial distance, and plots the profile
-% with per-bin averaging, counts, and standard-error bars.
-%
-% USAGE:
-%   fig = validateTrepatForces(finalEdgeForces, param, tstep)
-%       Single-snapshot profile (noisy in small tissues).
-%
-%   fig = validateTrepatForces(snapshotArray, param, tstep, 'timeAverage', true)
-%       Pass a STRUCT ARRAY where each element has a .data field holding an
-%       edgeForceData struct (e.g. your edgeForceSnapshots), and all edges
-%       from all snapshots are pooled before binning. Strongly recommended:
-%       a single snapshot in a 15x15 box has too few edges per bin.
-%
-% OPTIONAL NAME-VALUE ARGS:
-%   'timeAverage'   (logical, default false) treat first arg as snapshot array
-%   'nBins'         (int, default [] -> auto) number of radial bins
-%   'minCount'      (int, default 3) bins with fewer edges are blanked (NaN)
-%   'minEdgeFrac'   (double, default 0.5) minimum edge length as a fraction of
-%                   param.T1_TOL_bulk; shorter edges are excluded to avoid the
-%                   F/L blow-up from near-degenerate edges.
-%
-% NOTE ON INTERPRETATION:
-%   There is no substrate in this model, so these radial/azimuthal edge-force
-%   components are an ANALOG of Trepat's substrate tractions, not a literal
-%   reproduction. Validate the PATTERN (a coherent azimuthal/tangential band
-%   just behind the wound edge, radial structure near the edge), not the
-%   absolute sign or magnitude.
+% VALIDATETREPATFORCES Validates spatial force profiles against Trepat et al.
+% Computes radial and azimuthal components of edge forces relative to wound center.
+% USAGE: fig = validateTrepatForces(edgeForceData, param, tstep, varargin)
 
 %% -------- Parse options --------
 p = inputParser;
@@ -43,8 +16,7 @@ Lx = param.Lx;
 Ly = param.Ly;
 rc = param.woundCircular.center;
 
-% Physical minimum edge length: fraction of the T1 tolerance. Edges shorter
-% than this are excluded because force-per-length explodes as length -> 0.
+% Minimum edge length filter to avoid division by zero near degenerate edges
 if isfield(param, 'T1_TOL_bulk')
     minEdgeLen = opt.minEdgeFrac * param.T1_TOL_bulk;
 else

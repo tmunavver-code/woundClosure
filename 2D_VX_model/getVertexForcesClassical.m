@@ -1,22 +1,12 @@
 function f = getVertexForcesClassical(celldata,param,tstep)
-%% getVertexForces: get vertex forces from gradient of an energy functional
-%
-% MODIFIED (Stable V2):
-% - Added a guard clause to skip force calculations for invalid cells
-%   (with < 3 vertices). This prevents the simulation from "blowing up".
-%
+%% getVertexForcesClassical: Computes net forces on vertices from energy gradients
+% Includes stability guards for degenerate cells (<3 vertices).
 
 f = zeros(size(celldata.f));
 Lx = param.Lx;
 Ly = param.Ly;
 
-% --- Wound-directed crawling force (Trepat et al. 2014, Nat. Phys.) ---
-% Early wound closure is driven by outward-pointing lamellipodial
-% protrusion of margin cells into the wound (the OPTL), which decays as
-% the purse-string ring (IPTL) takes over. This is a separate, active
-% force -- distinct from the passive purse-string line tension below --
-% oriented from each margin cell's barycenter toward the wound centroid.
-% See README_force_based_transitions.md for the rationale.
+% --- Active lamellipodial wound crawling force ---
 haveWoundCrawl = isfield(param, 'enableWoundCrawling') && param.enableWoundCrawling && ...
     isfield(param, 'crawl_force0') && param.crawl_force0 > 0 && ...
     isfield(celldata, 'woundEdges') && ~isempty(celldata.woundEdges);
@@ -27,11 +17,7 @@ if haveWoundCrawl
     dispFromRef(:,1) = dispFromRef(:,1) - Lx * round(dispFromRef(:,1) / Lx);
     dispFromRef(:,2) = dispFromRef(:,2) - Ly * round(dispFromRef(:,2) / Ly);
     woundCenter = refPt + mean(dispFromRef, 1);
-    % FORCE-BASED STRATEGY (Phase F1): crawl force now decays as purse-string
-    % tension actually builds (celldata.crawl_current, integrated in
-    % myMainClassical.m), not on an independent fixed clock. Falls back to
-    % the old fixed-decay formula only if that state isn't present (e.g.
-    % older test scripts), so nothing breaks that isn't updated.
+    % Crawling force decays as purse-string recruits
     if isfield(celldata, 'crawl_current')
         current_crawl = celldata.crawl_current;
     else
@@ -40,19 +26,15 @@ if haveWoundCrawl
 else
     current_crawl = 0;
 end
-% --- End wound-directed crawling force setup ---
 
 for cellID = 1:celldata.nCells
     
     vertices = celldata.connec{cellID};
     
-    % --- NEW GUARD CLAUSE ---
-    % If a 3-cell intercalation has reduced this cell to a 2-vertex
-    % "line", it is no longer a valid cell. Skip all physics for it.
+    % Guard clause: skip invalid cells (<3 vertices)
     if length(vertices) < 3
-        continue; % Skip to the next cellID
+        continue;
     end
-    % --- END NEW GUARD CLAUSE ---
     
     Acell          = celldata.A(cellID);
     Pcell          = celldata.P(cellID);
@@ -62,13 +44,7 @@ for cellID = 1:celldata.nCells
     vertexcoordsold   = celldata.r;
     fcell          = zeros(size(celldata.f));
     
-    % --- Wound-cell specific contractility ---
-    % FORCE-BASED STRATEGY (Phase F5): the boost now ramps in via
-    % celldata.ka_wound_factor_current / celldata.contractility_wound_current
-    % (integrated in myMainClassical.m, gated on the wound's Kw having
-    % decayed -- see force_based_closure_strategy.md), instead of applying
-    % the full multiplier instantly at t=0. Falls back to the old instant
-    % multiplier if that state isn't present.
+    % Wound-cell specific contractility ramp
     isWoundCell = isfield(param, 'cellIDtoContract') && ismember(cellID, param.cellIDtoContract);
     if isWoundCell
         if isfield(celldata, 'ka_wound_factor_current')
@@ -82,14 +58,11 @@ for cellID = 1:celldata.nCells
             rstiff = rstiff / param.contractility_wound;  % lower rstiff = higher tension
         end
     end
-    % --- End wound contractility ---
     
-    % (No p0 modification loop, this is correct)
-    
-    % Modify verecoords acocuntin for peridicity
+    % Modify vertex coordinates accounting for periodicity
     vertexcoords = modifyVerticesForPeriodicity(vertexcoordsold,vertices,Lx,Ly);
 
-    % --- Crawling force direction for this cell (if it is a wound-margin cell) ---
+    % Crawling force direction for margin cells
     if isWoundCell && current_crawl > 0
         cellBary = mean(vertexcoords, 1);
         dToWound = woundCenter - cellBary;
@@ -106,8 +79,6 @@ for cellID = 1:celldata.nCells
     end
 
     for j = 1:length(vertices) % In anticlockwise order
-        % ... (rest of the function is identical) ...
-        
         currVert = vertices(j);
         
         if j == length(vertices)
@@ -149,10 +120,7 @@ end
 if isfield(celldata, 'woundEdges') && ~isempty(celldata.woundEdges)
 
     F_purse_string = zeros(size(f));
-    % FORCE-BASED STRATEGY (Phase F1): tension now recruited via feedback
-    % (celldata.lambda_current, integrated in myMainClassical.m, gated on
-    % Kw decay) instead of a fixed tstep ramp. Falls back to the old ramp
-    % if that state isn't present.
+    % Recruit purse-string tension via feedback or decay ramp
     if isfield(celldata, 'lambda_current')
         current_lambda = celldata.lambda_current;
     else
@@ -184,14 +152,7 @@ if isfield(celldata, 'woundEdges') && ~isempty(celldata.woundEdges)
 
 end
 
-% --- Wound-hole elastic resistance (Phase F2, Tetley et al. 2019 Kw) ---
-% The ablated hole retains a residual area-elastic resistance pulling it
-% back toward its area right after ablation (celldata.woundArea0), with
-% modulus celldata.Kw_current decaying to 0 over tau_Kw (integrated in
-% myMainClassical.m). While Kw is large this resists deformation in
-% *either* direction; combined with released bulk pre-stress this is what
-% produces the initial passive expansion phase, before it fades and lets
-% the purse-string close the wound. See force_based_closure_strategy.md.
+% --- Wound-hole elastic resistance (Tetley Kw) ---
 if isfield(celldata, 'woundArea0') && celldata.woundArea0 > 0 && ...
         isfield(celldata, 'Kw_current') && celldata.Kw_current > 1e-6 && ...
         isfield(celldata, 'woundEdges') && ~isempty(celldata.woundEdges)

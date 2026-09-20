@@ -1,32 +1,6 @@
 function [celldata, param, division_happened] = checkCellDivision(celldata, param)
-%CHECKCELLDIVISION Force-based cell division: a cell that has grown past
-%an area threshold divides with a probability set by Bell's law on its
-%own area-elastic pressure, the same stochastic-gating pattern used for
-%T1 (checkT1transitions.m) and wound-margin turnover
-%(checkWoundIntercalations.m). A division is only committed if it lowers
-%total tissue energy (strict gate, no Metropolis uphill tolerance here,
-%unlike T1/T2) -- otherwise the trial is reverted and the next candidate
-%cell is tried.
-%
-% NOTE ON THIS CHOICE: Tetley et al. 2019 themselves treat division as an
-% active, non-equilibrium "source of activity" and do not gate it on
-% energy at all -- a strict downhill-only requirement will suppress most
-% divisions, since creating new perimeter generally costs energy
-% immediately. This condition was enforced as a stability criterion:
-% the wound-topology corruption traced separately (see checkWoundIntercalations.m)
-% was first observed at a timestep where a division and a wound intercalation
-% coincided, and this gate rejects the energetically-unfavorable
-% divisions that destabilize the boundary.
-%
-% Trigger: the cell's own current area exceeding param.Area_div_thresh,
-% combined with the same Bell's-law stochastic draw used everywhere else
-% in this codebase -- so cells under more area-elastic pressure (more
-% crowded/over-grown) are more likely to divide, not a uniform per-cell
-% random rate.
-%
-% Geometry: performCellDivision.m splits the cell along its short axis
-% (Tetley's own stated division geometry -- "division of elongated cells
-% along their short axis"), through the centroid.
+% CHECKCELLDIVISION Force-based cell division triggered when cell area exceeds
+% Area_div_thresh, gated by Bell's law on area-elastic pressure and Metropolis energy.
 
 division_happened = false;
 
@@ -48,9 +22,7 @@ for cellID = 1:celldata.nCells
         continue;
     end
 
-    % Per-cell ka, including the wound-margin boost if applicable --
-    % must match getVertexForcesClassical.m/getEdgeForces.m exactly, same
-    % consistency requirement as everywhere else force-based gating is used.
+    % Per-cell ka including wound margin stiffening
     ka_cell = param.ka;
     isWoundCell = isfield(param, 'cellIDtoContract') && ismember(cellID, param.cellIDtoContract);
     if isWoundCell
@@ -61,12 +33,10 @@ for cellID = 1:celldata.nCells
         end
     end
 
-    % F_drive: area-elastic pressure (same quantity as pressure_area in
-    % getEdgeForces.m), positive and growing as the cell over-shoots A0.
+    % Area-elastic pressure driving force
     F_drive = 2.0 * ka_cell * (Acell - 1.0);
 
-    % Crowding modulation, same self-accelerating form used for T1/T2:
-    % f_beta shrinks as the cell grows further past threshold.
+    % Effective force scale modulation
     f_beta_eff = max(param.f_beta_div - param.f_beta_div_slope * (Acell - param.Area_div_thresh), 0.01);
 
     k_div = param.k_div0 * exp(F_drive / f_beta_eff);
@@ -85,12 +55,7 @@ for cellID = 1:celldata.nCells
             if dE < 0
                 accept_division = true;
             elseif isfield(param, 'T_eff_div') && param.T_eff_div > 0
-                % Metropolis-style acceptance, same as T1/T2. Division is
-                % the most expensive event type here (creating new
-                % perimeter always costs energy immediately), so a strict
-                % downhill-only rule rejected 100% of attempts -- see
-                % T_eff_div's calibration note in
-                % SingleCellContractionParameters.m.
+                % Metropolis uphill acceptance
                 accept_division = (rand() < exp(-dE / param.T_eff_div));
             else
                 accept_division = false;
@@ -103,11 +68,9 @@ for cellID = 1:celldata.nCells
                 fprintf(1, '--- Cell Division Performed --- Cell %d (area %.4f) split into %d and %d\n', ...
                     cellID, Acell, cellID, celldata.nCells);
                 fprintf(1, 'Energy change: %f\n', dE);
-                break; % one per call -- avoid stale-geometry compounding, same rule as T1/T2
+                break; % One division per call
             else
                 fprintf(1, 'DIV_REJECTED_DE: %f\n', dE);
-                % Trial discarded (celldata_temp goes out of scope
-                % unused); try the next candidate cell instead.
             end
         end
     end

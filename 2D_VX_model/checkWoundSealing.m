@@ -1,28 +1,6 @@
 function [celldata, param, seal_happened] = checkWoundSealing(celldata, param, tstep)
-%CHECKWOUNDSEALING Seal the wound where opposing margins have come into
-%contact -- the final step of closure, which retires cells from the wound
-%boundary.
-%
-% Gated exactly like the other three topological event types in this
-% model: a distance pre-condition, then a force-based Bell's-law
-% stochastic draw, then a Metropolis energy gate.
-%
-%   Gate 1 (geometry): two wound-margin vertices closer than
-%       param.L_seal_thresh that do NOT already share a cell. Requiring
-%       no shared cell is what makes this a merge ACROSS the wound gap
-%       (two different sides coming together) rather than a cell pinching
-%       itself in half, and it also guarantees no cell ends up listing
-%       the surviving vertex twice.
-%
-%   Gate 2 (force, Bell's law): F_drive is the closing force -- the
-%       component of each vertex's own net force directed at the other.
-%       Positive means the mechanics are actively pressing the two
-%       margins together, which is exactly when adhesion should form.
-%       Uses celldata.f, the same force field that moves the vertices, so
-%       the gate cannot disagree with the dynamics.
-%
-%   Gate 3 (energy): accept if the merge lowers tissue energy, otherwise
-%       accept with probability exp(-dE/T_eff_seal), as for T1/T2/division.
+% CHECKWOUNDSEALING Merges opposing wound margin vertices upon contact.
+% Gated by distance threshold, Bell's law closing force, and Metropolis energy.
 
 seal_happened = false;
 
@@ -115,8 +93,7 @@ for a = 1:numel(marginVerts)-1
         fprintf(1, '--- Wound Sealed --- vertices %d and %d merged (gap %.4f, F_drive %.4f)\n', v1, v2, sep, F_drive);
         fprintf(1, 'Energy change: %f\n', dE);
 
-        % One per call, same rule as the other event types -- avoids
-        % compounding several merges off one stale geometry snapshot.
+        % One seal per call to avoid stale geometry snapshot
         [celldata, param] = refreshWoundMargin(celldata, param);
         return;
     end

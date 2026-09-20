@@ -1,14 +1,6 @@
 function [coordinates, connectivity, edgedata,verttocell, T1flagVec,T1relaxstepcountVec, nT1, T1ForceLog]   = checkT1transitions(nCells,coordinates, connectivity, edgedata,verttocell,param,T1flagVec,T1relaxstepcountVec,imAugmented, edgeForceData, tstep, T1ForceLog, celldata)
-%% checkT1transitions: Checks for and performs a T1 transition
-%
-% MODIFIED:
-% 1. Implements enhanced T1 intercalation (fluidity) at the wound margin
-%    by using a separate, more permissive tolerance (param.T1_TOL_wound).
-% 2. Fixes bug in T1flagVec logic: flags are now correctly applied to
-%    vertices (vertID1, vertID2) instead of the local edge index (j).
-% 3. Passes the triggered T1 tolerance ('current_T1_TOL') into
-%    performT1swap.
-%
+%% checkT1transitions: Evaluates and executes T1 neighbor exchanges
+% Uses Bell's law on edge tension and Metropolis uphill energy acceptance.
 
 nT1 = param.nT1;
 
@@ -32,70 +24,49 @@ for cellID = 1:nCells
     verticesmat = connectivity{cellID};
     edgelenmat  = edgedata{cellID};
     
-    % --- Guard: skip cells where edgedata is out of sync with vertices ---
-    % This can happen after wound intercalations modify connectivity mid-step
+    % Guard: skip cells where edgedata is out of sync with vertices
     if length(verticesmat) < 3 || length(edgelenmat) < length(verticesmat)
         continue;
     end
     
     for j = 1:length(verticesmat)
         
-        % --- Get vertex IDs for the current edge FIRST ---
         vertID1 = verticesmat(j);
         if j < length(verticesmat)
             vertID2 = verticesmat(j+1);
-        else % Final edge
+        else
             vertID2 = verticesmat(1);
         end
         
-        % --- Check T1 relaxation flag on VERTICES (Bug Fix) ---
-        % Only proceed if neither vertex is in a relaxation period
+        % Check relaxation flag on vertices
         if T1flagVec(vertID1) == 0 && T1flagVec(vertID2) == 0
             
-            % --- NEW: Determine correct T1 tolerance ---
-            % Start with the default bulk tolerance
+            % Determine T1 tolerance (bulk vs wound margin)
             current_T1_TOL = param.T1_TOL_bulk;
-            
-            % If enhancement is on, check if this cell is a wound cell
             if param.enhanceT1atWound
-                % param.cellIDtoContract holds the list of wound edge cells
                 if ismember(cellID, param.cellIDtoContract)
-                    % Use the more permissive tolerance for wound-edge cells
                     current_T1_TOL = param.T1_TOL_wound;
                 end
             end
-            % --- END NEW ---
             
-            
-            % --- Now, check edge length with the correct tolerance ---
-            % AND check Force-Based criterion if enabled
             do_flip = false;
 
-            % BUG FIX: previously, when useForceBasedTransitions was true but
-            % the caller didn't pass edgeForceData (nargin<10, e.g. the
-            % myMainClassical.m call sites, which only pass 9 args), do_flip
-            % could never become true -- T1 was silently dead code. Now falls
-            % back to the kinematic rule whenever force data isn't available,
-            % matching the fallback checkWoundIntercalations.m already has.
+            % Force-based or kinematic logic
             if isfield(param, 'useForceBasedTransitions') && param.useForceBasedTransitions && nargin >= 10 && ~isempty(edgeForceData)
-                % Force-Based logic: length is still a NECESSARY pre-condition.
-                % Force modulates the probability, but the edge must be short first.
                 v_min = min(vertID1, vertID2);
                 v_max = max(vertID1, vertID2);
                 idx = find([edgeForceData.v1] == v_min & [edgeForceData.v2] == v_max, 1);
                 if ~isempty(idx)
                     edge_len = edgeForceData(idx).length;
 
-                    % GATE 1: Edge must be shorter than the tolerance (length pre-condition)
+                    % Edge must be shorter than tolerance
                     if edge_len < current_T1_TOL
                         force_tangent_per_length = edgeForceData(idx).total_tension / edge_len;
 
-                        % Length/crowding modulation: f_beta decreases as edge shortens,
-                        % causing the probability to self-accelerate near collapse.
-                        % T1 gates on TANGENTIAL force -- uses the T1-specific scale.
+                        % Modulate f_beta with edge shortening
                         f_beta_eff = max(param.f_beta_T1 - param.f_beta_length_slope_T1 * (current_T1_TOL - edge_len), 0.01);
 
-                        % GATE 2: Bell's-law stochastic probability
+                        % Bell's law stochastic probability
                         F_drive = force_tangent_per_length;
                         k_off = param.k_off0 * exp(F_drive / f_beta_eff);
                         P_flip = 1 - exp(-param.deltat * k_off);
@@ -106,7 +77,7 @@ for cellID = 1:nCells
                     end
                 end
             else
-                % Kinematic (Length-Based) logic
+                % Kinematic (length-based) logic
                 if edgelenmat(j) < current_T1_TOL
                     do_flip = true;
                 end
@@ -175,21 +146,10 @@ for cellID = 1:nCells
                     if dE < 0
                         accept_swap = true;
                     elseif isfield(param, 'T_eff_T1') && param.T_eff_T1 > 0
-                        % Metropolis-style acceptance: allow occasional
-                        % uphill moves instead of a strict always-downhill
-                        % rule, so the system can escape a locally-stuck
-                        % configuration via fluctuation and relax down
-                        % afterward (the way real active/thermal systems,
-                        % and Kaurin-Arroyo's stochastic bond-breaking,
-                        % can transiently do). T_eff_T1 sets the scale of
-                        % uphill jump this system tolerates -- calibrated
-                        % from this model's own logged dE, same approach
-                        % as f_beta_T1/f_beta_T2.
+                        % Metropolis uphill acceptance
                         P_accept_uphill = exp(-dE / param.T_eff_T1);
                         accept_swap = (rand() < P_accept_uphill);
                     else
-                        % No T_eff_T1 configured -- fall back to the old
-                        % strict always-downhill rule.
                         accept_swap = false;
                     end
                 end
@@ -206,7 +166,7 @@ for cellID = 1:nCells
                     
                     nT1 = nT1 + 1;
                     
-                    % Set relaxation flag on the VERTICES involved
+                    % Set relaxation flag on vertices
                     T1flagVec(vertID1) = 1;
                     T1flagVec(vertID2) = 1;
                     
@@ -225,14 +185,12 @@ for cellID = 1:nCells
             end
             
         else
-            % Do nothing, vertices are in relaxation period
+            % Vertices in relaxation period
         end
     end
 end
 
-% --- This relaxation loop is correct ---
-% It iterates over the global vertex list and counts down
-% any flagged vertices.
+% Decrement relaxation counter on flagged vertices
 for i = 1:length(T1flagVec)
     if T1flagVec(i) == 1
         T1relaxstepcountVec(i) = T1relaxstepcountVec(i) + 1;
