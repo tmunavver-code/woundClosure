@@ -66,12 +66,12 @@ for cellID = 1:nCells
                         % Modulate f_beta with edge shortening
                         f_beta_eff = max(param.f_beta_T1 - param.f_beta_length_slope_T1 * (current_T1_TOL - edge_len), 0.01);
 
-                        % Bell's law stochastic probability
+                        % Bell probability with a deterministic threshold
                         F_drive = force_tangent_per_length;
                         k_off = param.k_off0 * exp(F_drive / f_beta_eff);
                         P_flip = 1 - exp(-param.deltat * k_off);
 
-                        if rand() < P_flip
+                        if P_flip >= param.bellProbabilityThreshold
                             do_flip = true;
                         end
                     end

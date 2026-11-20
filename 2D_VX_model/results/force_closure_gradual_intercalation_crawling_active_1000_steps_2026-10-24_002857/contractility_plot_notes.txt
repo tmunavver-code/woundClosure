@@ -1,0 +1,5 @@
+Derived from this folder's original workspace.mat without running the simulation or altering original outputs.
+Cell perimeter-contractility factor is directly saved in contractilityFactorLog. It rises at every timestep 1 through 1000 (t=0.01 to 10). Initial factor at t=0 is 1. Final factor 2.973334453234.
+The energy plot shows the original saved samples, with red points every 100 steps for readability; these are not isolated contractility jumps. Full increment data are in the CSV.
+Purse-string tension is reconstructed from the original recruitment recurrence, validated against saved final lambda and against the saved contractility trajectory. Final tension 3.946668906468.
+Perimeter energy coefficient = contractility factor / rstiff, so the bulk coefficient is 2 and final margin coefficient is 5.946668906468. Physical time units have not been calibrated.

@@ -5,17 +5,30 @@ function [coordinates, connectivity, verttocell] = performWoundMarginT1(cellA, c
 
 Pos1 = coordinates(v1_master,:);
 Pos2 = coordinates(v2_orphan,:);
-vec = Pos2 - Pos1;
-Lsep = norm(vec);
-if Lsep < 1e-10
-    % Nudge coincident vertices apart along arbitrary direction
-    vec = [1, 0];
-    Lsep = 1;
+oldEdge = Pos2 - Pos1;
+oldEdge(1) = oldEdge(1) - param.Lx * round(oldEdge(1) / param.Lx);
+oldEdge(2) = oldEdge(2) - param.Ly * round(oldEdge(2) / param.Ly);
+oldLength = norm(oldEdge);
+if oldLength < 1e-10
+    oldDirection = [1, 0];
+else
+    oldDirection = oldEdge / oldLength;
 end
-% Push vertices apart using separation scale proportional to T1_TOL_wound
-sepScale = 0.52 * param.T1_TOL_wound;
-coordinates(v1_master,:) = Pos1 - sepScale * vec / Lsep;
-coordinates(v2_orphan,:) = Pos2 + sepScale * vec / Lsep;
+
+% A continuous T1 passes through a zero-length fourfold vertex.  Place the
+% replacement edge at a small length perpendicular to the disappearing
+% edge, rather than expanding the old edge by a finite distance.
+midpoint = Pos1 + 0.5 * oldEdge;
+newDirection = [-oldDirection(2), oldDirection(1)];
+if isfield(param, 'woundT1NewEdgeLength')
+    newLength = param.woundT1NewEdgeLength;
+else
+    newLength = 0.01 * param.T1_TOL_wound;
+end
+coordinates(v1_master,:) = midpoint - 0.5 * newLength * newDirection;
+coordinates(v2_orphan,:) = midpoint + 0.5 * newLength * newDirection;
+coordinates(:,1) = mod(coordinates(:,1), param.Lx);
+coordinates(:,2) = mod(coordinates(:,2), param.Ly);
 
 % Cell A: remove v2_orphan (keeps v1_master) -- pushed off the margin.
 verticesA = connectivity{cellA};

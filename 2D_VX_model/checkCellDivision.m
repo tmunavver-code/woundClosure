@@ -12,6 +12,13 @@ E_old = getTissueEnergyClassical(celldata, param);
 
 for cellID = 1:celldata.nCells
 
+    if isfield(param, 'allowWoundMarginDivision') && ...
+            ~param.allowWoundMarginDivision && ...
+            isfield(param, 'cellIDtoContract') && ...
+            ismember(cellID, param.cellIDtoContract)
+        continue;
+    end
+
     vertices = celldata.connec{cellID};
     if length(vertices) < 4
         continue; % need >=4 vertices to split into two valid cells
@@ -42,7 +49,7 @@ for cellID = 1:celldata.nCells
     k_div = param.k_div0 * exp(F_drive / f_beta_eff);
     P_div = 1 - exp(-param.deltat * k_div);
 
-    if rand() < P_div
+    if P_div >= param.bellProbabilityThreshold
         celldata_temp = celldata;
         [celldata_temp, success] = performCellDivision(cellID, celldata_temp, param);
         if success

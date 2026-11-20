@@ -12,7 +12,6 @@ connectedcellsnode2 = verttocell{node2};
 connectedcells = unique([connectedcellsnode1, connectedcellsnode2]);
 
 if length(connectedcells) ~=4
-	fprintf(1,'Less then 4 surrounding cells found. Most likely a boundary vertex.\n');
 	% do nothing
 	cellID1 = -1;
 	cellID2 = -1;

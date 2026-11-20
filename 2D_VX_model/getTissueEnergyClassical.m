@@ -1,5 +1,5 @@
 function totalenergy = getTissueEnergyClassical(celldata,param)
-%% getCurrentEnergy: returns total energyof the collection
+%% getTissueEnergyClassical: conservative energy used by topology gates
 
 % get the total energy
 totalenergy = 0;
@@ -11,8 +11,19 @@ for cellID = 1:celldata.nCells
     rstiff = param.rstiff;
     ka     = param.ka;
     
-    if cellID == param.cellIDtoContract
-        rstiff = rstiff/param.multFactorForContraction;
+    isWoundCell = isfield(param, 'cellIDtoContract') && ...
+        ismember(cellID, param.cellIDtoContract);
+    if isWoundCell
+        if isfield(celldata, 'ka_wound_factor_current')
+            ka = ka * celldata.ka_wound_factor_current;
+        elseif isfield(param, 'ka_wound_factor')
+            ka = ka * param.ka_wound_factor;
+        end
+        if isfield(celldata, 'contractility_wound_current')
+            rstiff = rstiff / celldata.contractility_wound_current;
+        elseif isfield(param, 'contractility_wound')
+            rstiff = rstiff / param.contractility_wound;
+        end
     end
     
     % Energy pseudo-functionl
@@ -20,4 +31,53 @@ for cellID = 1:celldata.nCells
     
     % Summing over all cells
     totalenergy = totalenergy + energycell;
+end
+
+% Wound-contact free energy. It is constant between topology changes, so it
+% contributes no vertex force. A validated handoff that removes one cell
+% from the wound margin lowers this contribution by a fixed amount.
+if isfield(param, 'woundBoundaryCellEnergy') && ...
+        param.woundBoundaryCellEnergy > 0 && ...
+        isfield(param, 'cellIDtoContract')
+    totalenergy = totalenergy + param.woundBoundaryCellEnergy * ...
+        numel(unique(param.cellIDtoContract));
+end
+
+% Purse-string line energy: its negative gradient is the edge contraction
+% force applied in getVertexForcesClassical.
+if isfield(celldata, 'woundEdges') && ~isempty(celldata.woundEdges)
+    if isfield(celldata, 'lambda_current')
+        lambda = celldata.lambda_current;
+    elseif isfield(param, 'lambda_purse_string')
+        lambda = param.lambda_purse_string;
+    else
+        lambda = 0;
+    end
+    woundPerimeter = 0;
+    for edgeID = 1:size(celldata.woundEdges, 1)
+        d = celldata.r(celldata.woundEdges(edgeID,2),:) - ...
+            celldata.r(celldata.woundEdges(edgeID,1),:);
+        d(1) = d(1) - param.Lx * round(d(1) / param.Lx);
+        d(2) = d(2) - param.Ly * round(d(2) / param.Ly);
+        woundPerimeter = woundPerimeter + norm(d);
+    end
+    totalenergy = totalenergy + lambda * woundPerimeter;
+end
+
+% Wound-hole area elasticity. Use the same ordered polygon and coefficient
+% as the corresponding force term.
+if isfield(param, 'enableWoundResistance') && param.enableWoundResistance && ...
+        isfield(celldata, 'woundArea0') && celldata.woundArea0 > 0 && ...
+        isfield(celldata, 'Kw_current') && celldata.Kw_current > 1e-6 && ...
+        isfield(celldata, 'woundEdges') && ~isempty(celldata.woundEdges)
+    [woundLoop, loopValid] = getOrderedWoundLoop(celldata.woundEdges);
+    if loopValid
+        woundData = celldata;
+        woundData.connec{celldata.nCells + 1} = woundLoop;
+        woundArea = getPolygonalCellArea(woundData, celldata.nCells + 1, param);
+        totalenergy = totalenergy + celldata.Kw_current * ...
+            (woundArea - celldata.woundArea0)^2;
+    end
+end
+
 end
