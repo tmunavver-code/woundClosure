@@ -1,7 +1,6 @@
 function celldata   = updateVertexPositions(celldata,param)
-%% updateVertexPositions: update current vertex positions
-% using the nodal force and viscosity coefficient, use backard Euler to
-% update the nodal positions
+%% updateVertexPositions: explicit Euler update of the vertex positions,
+% r = r0 + dt*f/eta, wrapped back into the periodic box
 
 f  = celldata.f;
 r0 = celldata.r0;

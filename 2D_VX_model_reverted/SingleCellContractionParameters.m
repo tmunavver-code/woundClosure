@@ -1,11 +1,9 @@
 % T1 transition parameters
 param.maxT1relaxsteps = 30;
-% param.T1_TOL   = 0.1;      % <-- RENAME THIS
-param.T1_TOL_bulk = 0.1;      % <-- TO THIS (tolerance for bulk tissue)
-param.nT1      = 0;         % to store the number of T1 transitions occured
+param.T1_TOL_bulk = 0.1;      % tolerance for bulk tissue
+param.nT1      = 0;         % counter of accepted T1 transitions
 
-% %%%%%%%%%%%%%%%%%%%%% NEW: T1 Intercalation Parameters %%%%%%%%%%%%%%%%%%%%%%
-% This implements the "pragmatic solution" from the report:
+% %%%%%%%%%%%%%%%%%%%%% T1 Intercalation Parameters %%%%%%%%%%%%%%%%%%%%%%
 % T1 transitions (4-cell swaps) are used as the mechanism for
 % intercalation/fluidity, and they are enhanced at the wound margin.
 param.enableT1transitions = false;   % MASTER TOGGLE to turn all T1 swaps on/off
@@ -16,7 +14,7 @@ param.enhanceT1atWound = false;    % Toggle for higher intercalation at wound ed
 param.T1_TOL_wound = 0.2;
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% %%%%%%%%%%%%%%%%% NEW: 3-Cell Intercalation Parameters %%%%%%%%%%%%%%%%%%%%
+% %%%%%%%%%%%%%%%%% 3-Cell Intercalation Parameters %%%%%%%%%%%%%%%%%%%%
 % Implements the T2-like extrusion/intercalation at the wound margin
 param.enableWoundIntercalations = false;
 param.L_intercalation_thresh = 0.5; % Threshold for wound-edge shrink
@@ -59,13 +57,13 @@ param.cellIDstoTrack = 0;   % tracking neighbouring cells
 %%%%%%%%%%%%%%%%%%%%%% Cell contraction parameter (OLD - DISABLED) %%%%%%%%%%%%%%%%%%
 
 
-% %%%%%%%%%%%%%%%%%%%%% NEW: Edge-Specific Purse-String Parameters %%%%%%%%%%%%%%%%%%
+% %%%%%%%%%%%%%%%%%%%%% Edge-Specific Purse-String Parameters %%%%%%%%%%%%%%%%%%
 param.lambda_purse_string = 1.5;  % Max tension of the purse-string cable
 param.t_ramp_purse_string = 100;  % Number of timesteps to ramp up to max tension
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-% %%%%%%%%%%%%%%%%%%%%% NEW: Force Visualization Parameters %%%%%%%%%%%%%%%%%%%%%%%%%
+% %%%%%%%%%%%%%%%%%%%%% Force Visualization Parameters %%%%%%%%%%%%%%%%%%%%%%%%%
 param.plotForces = true;      % Set to true to enable force plotting
 param.plotForces_Interval = 20; % Plot forces every 20 timesteps
 param.plotForces_FigHandle = 10; % Figure window to use for plotting

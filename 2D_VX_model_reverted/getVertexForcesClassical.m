@@ -1,9 +1,7 @@
 function f = getVertexForcesClassical(celldata,param,tstep)
 %% getVertexForces: get vertex forces from gradient of an energy functional
 %
-% MODIFIED:
-% 1. REMOVED: Old whole-cell contraction (p0 modification).
-% 2. ADDED: New edge-specific purse-string force calculation.
+% Elastic area/perimeter forces plus the edge-specific purse-string force.
 %
 
 f = zeros(size(celldata.f));
@@ -84,7 +82,7 @@ for cellID = 1:celldata.nCells
 end
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% --- NEW: PRIORITY 1 - EDGE-SPECIFIC PURSE-STRING FORCE ---
+% --- EDGE-SPECIFIC PURSE-STRING FORCE ---
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % This force is added *after* all the cell-based elastic forces are calculated.
@@ -136,7 +134,6 @@ if isfield(celldata, 'woundEdges') && ~isempty(celldata.woundEdges)
 end
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% --- END OF NEW SECTION ---
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 end

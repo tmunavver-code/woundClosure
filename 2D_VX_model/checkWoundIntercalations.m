@@ -19,10 +19,8 @@ oldBoundaryCount = numel(unique(woundCells));
 oldDegrees = cellfun(@(x) numel(unique(x)), verttocell);
 oldMaxDegree = max(oldDegrees);
 
-% A circular margin's circumference falls approximately with its radius.
-% Use the measured perimeter to reduce the allowed boundary population
-% gradually, with a biological/numerical floor of five cells.  This avoids
-% both a many-cell terminal rosette and an immediate cascade of handoffs.
+% Target boundary population shrinks with the measured wound perimeter
+% (lower bound param.minWoundBoundaryCells).
 currentPerimeter = woundPerimeter(coordinates, woundEdges, param);
 if isfield(celldata, 'woundPerimeter0') && celldata.woundPerimeter0 > 0
     perimeterRatio = min(max(currentPerimeter / celldata.woundPerimeter0, 0), 1);
@@ -55,12 +53,10 @@ end
 probabilityThreshold = probabilityThresholdMin + ...
     (probabilityThresholdMax - probabilityThresholdMin) * perimeterRatio;
 
-% The margin still has enough cells for its present circumference.  Wait
-% for contraction before permitting another true boundary-cell handoff.
+% A handoff is allowed only while the margin holds more cells than the target.
 allowHandoff = oldBoundaryCount > targetBoundaryCount;
 if allowHandoff
-    % Perimeter crowding is already a deterministic mechanical trigger, so
-    % use the lower Bell cutoff instead of requiring additional compression.
+    % Crowded margin: use the lower Bell threshold.
     probabilityThreshold = probabilityThresholdMin;
 end
 eventInfo.probabilityThreshold = probabilityThreshold;
@@ -71,8 +67,7 @@ candidates = struct('edgeIndex', {}, 'v1', {}, 'v2', {}, 'cellA', {}, ...
     'cellB', {}, 'cellC', {}, 'mode', {}, 'modeRank', {}, 'length', {}, ...
     'lengthRatio', {}, 'forceDrive', {}, 'probability', {}, 'hasForce', {});
 
-% Classify every boundary edge first so handoffs cannot be starved by the
-% arbitrary order returned by the free-edge hash map.
+% Classify every boundary edge before choosing an event.
 for edgeIndex = 1:size(woundEdges, 1)
     v1 = woundEdges(edgeIndex, 1);
     v2 = woundEdges(edgeIndex, 2);
@@ -133,10 +128,7 @@ for edgeIndex = 1:size(woundEdges, 1)
             [edgeForceData.v2] == vMax, 1);
         if ~isempty(forceIndex)
             hasForce = true;
-            % T2-like loss of a wound-margin contact is promoted by
-            % compression. pressure_area is negative for a cell below its
-            % target area, so convert that signed stress to a non-negative
-            % compressive Bell drive. Expansion does not drive extrusion.
+            % Compressive area pressure drives loss of the wound contact.
             forceDrive = max(-edgeForceData(forceIndex).pressure_area, 0);
             fBeta = max(param.f_beta_T2 - param.f_beta_length_slope_T2 * ...
                 max(0, param.L_intercalation_thresh - edgeLength), 0.01);
@@ -180,11 +172,7 @@ for orderIndex = 1:numel(order)
         continue;
     end
 
-    % Short-edge collapse remains the ordinary trigger.  If contraction
-    % has made the measured perimeter too small for the current boundary
-    % population, that geometric crowding is an alternate trigger for the
-    % shortest true handoff candidate.  All force, energy, and topology
-    % gates below still apply.
+    % Trigger: a short wound contact, or a crowded margin (shortest handoff).
     perimeterCrowdingTrigger = strcmp(candidate.mode, 'handoff') && ...
         allowHandoff;
     lengthEligible = candidate.length < param.L_intercalation_thresh || ...

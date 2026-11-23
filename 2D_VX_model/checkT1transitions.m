@@ -1,6 +1,6 @@
 function [coordinates, connectivity, edgedata,verttocell, T1flagVec,T1relaxstepcountVec, nT1, T1ForceLog]   = checkT1transitions(nCells,coordinates, connectivity, edgedata,verttocell,param,T1flagVec,T1relaxstepcountVec,imAugmented, edgeForceData, tstep, T1ForceLog, celldata)
 %% checkT1transitions: Evaluates and executes T1 neighbor exchanges
-% Uses Bell's law on edge tension and Metropolis uphill energy acceptance.
+% Bell's law on edge tension selects candidates; an energy test accepts them.
 
 nT1 = param.nT1;
 
@@ -124,7 +124,6 @@ for cellID = 1:nCells
                 vtc_backup = verttocell;
                 
                 % Perform the T1 transition
-                % --- MODIFIED: Pass current_T1_TOL as the last argument ---
                 [coordinates, connectivity, edgedata,verttocell] = performT1swap(cellID1, cellID2, cellID3, cellID4, coordinates, connectivity, edgedata,verttocell, vertID1, vertID2, param,imAugmented, current_T1_TOL);
                 
                 % --- Energy Gate post-calculation ---

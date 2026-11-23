@@ -1,4 +1,5 @@
 function p = plot3Dtissue(nCells, Coords, Connec,param)
+% Draws the cells as patches; tracked and wound-margin cells are highlighted.
 
 [Cnew, Vnew] = getCellDataforPlottingwithoutPeriJumps(nCells, Coords, Connec, param);
 
@@ -6,8 +7,7 @@ p = gobjects(nCells, 1); % Pre-allocate graphics object array
 
 for cellID = 1:nCells
     
-    % --- NEW: Fix for "white hole" bug ---
-    % Only try to draw valid polygons (3+ vertices)
+    % Draw only valid polygons (3 or more vertices)
     if length(Cnew{cellID}) > 2
         
         if ismember(cellID,param.SelfPropellingCellIDs) || ismember(cellID,param.cellIDtoContract) || ismember(cellID,param.cellIDstoTrack)
@@ -17,7 +17,6 @@ for cellID = 1:nCells
         end
         
     end
-    % --- End of fix ---
     
     axis image off;
 

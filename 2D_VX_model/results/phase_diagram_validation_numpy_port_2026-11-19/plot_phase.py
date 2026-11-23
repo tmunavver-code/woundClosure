@@ -1,14 +1,15 @@
-import sys, numpy as np, pandas as pd
+import os, sys, numpy as np, pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from matplotlib.collections import PolyCollection
-sys.path.insert(0, "/home/claude/phase")
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 from vxport import C_HEX, unwrap
 
 c = C_HEX
-df = pd.read_csv("/home/claude/phase/out/sweep_results.csv")
+df = pd.read_csv(os.path.join(HERE, "sweep_results.csv"))
 SOFT_BG, HEX_BG = "#e3f0f9", "#cfcfcf"
 INK, MUTED = "#1f1f1f", "#6b6b6b"
 HEXPT, SOFTPT = "#3a3a3a", "#1f6fb5"
@@ -74,12 +75,12 @@ def draw_net(axi, f):
     return d
 
 ins1 = fig.add_axes([0.545, 0.575, 0.135, 0.31])
-d1 = draw_net(ins1, "/home/claude/phase/out/cfg_II.npz")
+d1 = draw_net(ins1, os.path.join(HERE, "cfg_II.npz"))
 qII = df.loc[df.set == "point_II", "q_mean"].iloc[0]
 qIII = df.loc[df.set == "point_III", "q_mean"].iloc[0]
 ins1.set_title(f"relaxed network, point II\nhexagonal, q = {qII:.4f}", fontsize=9, color=INK, pad=3)
 ins2 = fig.add_axes([0.545, 0.20, 0.135, 0.31])
-d2 = draw_net(ins2, "/home/claude/phase/out/cfg_III.npz")
+d2 = draw_net(ins2, os.path.join(HERE, "cfg_III.npz"))
 ins2.set_title(f"relaxed network, point III\nsoft, q = {qIII:.4f}  (p$_0$ = 4.25)", fontsize=9, color=INK, pad=3)
 ax2.text(3.775, 3.728, "all six $\\bar\\Gamma$ rows lie on\none curve (overlapping)", fontsize=9.5, color=MUTED)
 
@@ -102,5 +103,5 @@ ax2.grid(color="#e6e6e6", lw=0.8); ax2.set_axisbelow(True)
 ax2.legend(fontsize=9, loc="upper left", frameon=True, facecolor="white", edgecolor="#bbbbbb")
 for sp in ["top", "right"]: ax2.spines[sp].set_visible(False)
 
-fig.savefig("/mnt/user-data/outputs/phase_diagram_validation.png", dpi=170, facecolor="white")
+fig.savefig(os.path.join(HERE, "phase_diagram_validation.png"), dpi=170, facecolor="white")
 print("saved")

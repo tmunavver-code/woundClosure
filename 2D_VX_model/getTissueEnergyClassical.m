@@ -26,16 +26,14 @@ for cellID = 1:celldata.nCells
         end
     end
     
-    % Energy pseudo-functionl
+    % Cell energy
     energycell = ka*(Acell - 1.0)^2 + 1/rstiff * (Pcell - p0)^2;
     
     % Summing over all cells
     totalenergy = totalenergy + energycell;
 end
 
-% Wound-contact free energy. It is constant between topology changes, so it
-% contributes no vertex force. A validated handoff that removes one cell
-% from the wound margin lowers this contribution by a fixed amount.
+% Wound-boundary cell energy (constant between topology changes, no vertex force).
 if isfield(param, 'woundBoundaryCellEnergy') && ...
         param.woundBoundaryCellEnergy > 0 && ...
         isfield(param, 'cellIDtoContract')
@@ -43,8 +41,7 @@ if isfield(param, 'woundBoundaryCellEnergy') && ...
         numel(unique(param.cellIDtoContract));
 end
 
-% Purse-string line energy: its negative gradient is the edge contraction
-% force applied in getVertexForcesClassical.
+% Purse-string line energy (its gradient is the purse-string force).
 if isfield(celldata, 'woundEdges') && ~isempty(celldata.woundEdges)
     if isfield(celldata, 'lambda_current')
         lambda = celldata.lambda_current;
@@ -64,8 +61,7 @@ if isfield(celldata, 'woundEdges') && ~isempty(celldata.woundEdges)
     totalenergy = totalenergy + lambda * woundPerimeter;
 end
 
-% Wound-hole area elasticity. Use the same ordered polygon and coefficient
-% as the corresponding force term.
+% Optional wound-hole area elasticity (same polygon as the force term).
 if isfield(param, 'enableWoundResistance') && param.enableWoundResistance && ...
         isfield(celldata, 'woundArea0') && celldata.woundArea0 > 0 && ...
         isfield(celldata, 'Kw_current') && celldata.Kw_current > 1e-6 && ...

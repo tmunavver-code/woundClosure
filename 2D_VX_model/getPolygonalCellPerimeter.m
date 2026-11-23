@@ -1,4 +1,5 @@
 function [Pcell, EdgesCell] = getPolygonalCellPerimeter(coordinates,connectivityVec,param, imAugmented)
+% Perimeter and edge lengths of one cell, with periodic corrections
 
 vertices          = connectivityVec;
 vertexcoordsold   = coordinates;

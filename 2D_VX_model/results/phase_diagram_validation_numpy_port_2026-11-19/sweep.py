@@ -1,6 +1,7 @@
-import sys, csv, time, numpy as np
+import os, sys, csv, time, numpy as np
 from multiprocessing import Pool
-sys.path.insert(0, "/home/claude/phase")
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 from vxport import *
 
 KA, DT, ETA = 1.0, 0.01, 1.0          # model defaults (SingleCellContractionParameters.m)
@@ -40,7 +41,7 @@ def relax(task):
                energy_per_cell=epc, A_min=A.min(), A_max=A.max(), max_force=np.abs(f).max(),
                phase=phase, seconds=time.time() - t0)
     if save:
-        np.savez(f"/home/claude/phase/out/cfg_{save}.npz", r=r, conn=conn, Lx=Lx, Ly=Ly,
+        np.savez(os.path.join(HERE, f"cfg_{save}.npz"), r=r, conn=conn, Lx=Lx, Ly=Ly,
                  Lbar=Lbar, Gbar=Gbar, p0=p0)
     return row
 
@@ -69,13 +70,11 @@ def tasks():
 
 
 if __name__ == "__main__":
-    import os
-    os.makedirs("/home/claude/phase/out", exist_ok=True)
     T = tasks()
     # longest jobs first for better load balance
     T.sort(key=lambda t: -t[5] * t[3] * t[4])
     fields = None
-    with open("/home/claude/phase/out/sweep_results.csv", "w", newline="") as fh, Pool(2) as pool:
+    with open(os.path.join(HERE, "sweep_results.csv"), "w", newline="") as fh, Pool(2) as pool:
         for i, row in enumerate(pool.imap_unordered(relax, T), 1):
             if fields is None:
                 fields = list(row.keys())

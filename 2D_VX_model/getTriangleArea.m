@@ -1,4 +1,5 @@
 function A = getTriangleArea(vecp1,vecp2,vecp3)
+% Area of the triangle with vertices vecp1, vecp2, vecp3
 
 a = vecp2 - vecp1;
 b = vecp3 - vecp1;

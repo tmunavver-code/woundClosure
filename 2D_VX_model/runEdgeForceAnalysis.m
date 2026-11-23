@@ -5,9 +5,9 @@
 %   1. A 4-panel figure showing perimeter tension, purse-string tension,
 %      total tension, and area pressure on each edge.
 %   2. A vector plot showing tangential + normal force arrows at edge midpoints.
-%   3. Saved results (workspace + figures) to results/edge_forces/
+%   3. Saved results (workspace + figures) in results/edge_forces_new/
 %
-% Usage: Simply run this script in MATLAB from the 2D_VX_model directory.
+% Usage: run from the 2D_VX_model directory.
 
 addpath(genpath('../common'))
 addpath(genpath('./functions2D'))
@@ -96,7 +96,6 @@ for tstep = 1:param.Nsteps
     celldata.A = getCellAreas(celldata, param);
     [celldata.P, celldata.EdgeData] = getCellPerimeters(celldata.nCells, celldata.r, celldata.connec, param, 0);
     
-    % The currentEdgeForces is now computed above
     if param.enableT1transitions
         [celldata.r, celldata.connec, celldata.EdgeData, celldata.verttocell, ...
          T1flagVec, T1relaxstepcountVec, param.nT1, T1ForceLog] = ...
@@ -217,7 +216,7 @@ fprintf('\n=== All edge force results saved to %s ===\n', saveDir);
 
 
 %% ========================================================================
-% Local helper for standalone edge coloring (avoids nested function issues)
+% Local helper for edge colouring
 % =========================================================================
 function plotEdgeColorMap_standalone(celldata, param, edgeForceData, fieldName)
 

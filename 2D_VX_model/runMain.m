@@ -1,6 +1,6 @@
 %% runMain: Primary driver for full wound closure simulation
 % Executes simulation with purse-string tension, cell crawling, T1/T2 transitions,
-% mitotic divisions, and wound sealing. Saves outputs to final_results/.
+% division and sealing (as configured), saving outputs to testing/.
 
 addpath(genpath('../common'))
 addpath(genpath('./functions2D'))
@@ -94,7 +94,7 @@ for tstep = 1:param.Nsteps
 
     [energymat0] = getTissueEnergyClassical(celldata,param);
 
-    %% Force-based closure state updates (see force_based_closure_strategy.md)
+    %% Recruitment of the active forces on the Kw clock
     if celldata.woundArea0 > 0
         celldata.Kw_current = param.Kw0 * exp(-tstep * param.deltat / param.tau_Kw);
         kw_fraction_decayed = 1 - celldata.Kw_current / param.Kw0;
@@ -138,26 +138,22 @@ for tstep = 1:param.Nsteps
         end
     end
 
-    %% T1 (force + energy gated, Metropolis uphill acceptance)
+    %% Bulk T1 transitions (force + energy gated)
     nT1_before = param.nT1;
     if param.enableT1transitions
         [celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell, T1flagVec,T1relaxstepcountVec,param.nT1, T1ForceLog] = ...
             checkT1transitions(celldata.nCells,celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell,param,T1flagVec,T1relaxstepcountVec,0, edgeForceData, tstep, T1ForceLog, celldata);
     end
     if param.nT1 > nT1_before
-        % Bulk T1 rewired connectivity -- the wound margin may have
-        % changed. See refreshWoundMargin.m for why staleness here is a
-        % real physics error, not just bookkeeping.
+        % Connectivity changed: recompute the wound margin.
         [celldata, param] = refreshWoundMargin(celldata, param);
     end
 
     param.Tsim = param.Tsim + param.deltat;
     celldata.r0 = celldata.r;
 
-    %% Cell division (force-based, third topological event type)
-    % See checkCellDivision.m / performCellDivision.m. Grows
-    % nMasterVertices/nCells -- every per-vertex array sized at the old
-    % nMasterVertices must grow with it.
+    %% Cell division (optional, force + energy gated)
+    % Division adds vertices, so per-vertex arrays are extended.
     nMasterVerticesBefore = celldata.nMasterVertices;
     [celldata, param, division_happened] = checkCellDivision(celldata, param);
     if division_happened
@@ -177,14 +173,10 @@ for tstep = 1:param.Nsteps
     energymat(tstep) = getTissueEnergyClassical(celldata,param);
     timemat(tstep)   = param.Tsim;
 
-    %% Wound sealing (force + energy gated) -- retires cells from the
-    % margin as opposing sides come into contact. See checkWoundSealing.m.
+    %% Wound sealing (optional, force + energy gated)
     [celldata, param, seal_happened] = checkWoundSealing(celldata, param, tstep);
 
-    % Wound area by conservation of the periodic box -- no topology
-    % assumptions, so it survives the boundary pinching as the wound
-    % closes (see getWoundArea.m; loop tracing went NaN from that point
-    % on even though the mesh was consistent).
+    % Wound area from box-area conservation (getWoundArea.m)
     woundAreaLog(tstep) = getWoundArea(celldata, param);
     marginCellLog(tstep) = numel(param.cellIDtoContract);
     woundEdgeLog(tstep)  = size(celldata.woundEdges,1);

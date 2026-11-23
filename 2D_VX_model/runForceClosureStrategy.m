@@ -1,24 +1,18 @@
-%% runForceClosureStrategy: Force-Based Closure Strategy — 1000-step run
+%% runForceClosureStrategy: main wound-closure simulation (1000 steps)
 %
-% Follows force_based_closure_strategy.md (Phases F1/F2/F5) on top of the
-% Bell's-law force-based T1/T2 gating with Metropolis-style uphill
-% acceptance:
-%   - Kw decaying over tau_Kw as both a recruitment clock and wound-hole
-%     elastic resistance when enableWoundResistance is true
-%   - Purse-string / crawl / margin-contractility all recruited via
-%     feedback gated on Kw's decay, not fixed timers
-%   - T1 (checkT1transitions.m) / T2 (checkWoundIntercalations.m) gated
-%     on real per-edge forces (calibrated f_beta_T1/f_beta_T2), with
-%     occasional energy-increasing moves allowed (calibrated
-%     T_eff_T1/T_eff_T2)
+% Circular wound in a periodic 213-cell tissue (p0 = 4). Closure is driven by
+% the purse string and crawling, recruited on the decay of the Kw clock.
+% Bulk T1 transitions and wound-margin handoffs/trims are selected with a
+% Bell-type force threshold and accepted when they lower the energy.
 %
-% Saves ALL results to: results/force_closure_<today's date>/
-%   - energy_vs_time.png
-%   - ka_contractility_every_50_steps.png + .csv (wound-margin ka/rstiff
-%     ramp state sampled every 50 timesteps, plus the step-to-step delta)
-%   - wound_area_vs_time.png
-%   - initial_state.png / final_state.png
-%   - workspace.mat
+% Optional environment variables:
+%   WOUND_NSTEPS       number of timesteps (default 1000)
+%   WOUND_RUN_TAG      text added to the output folder name
+%   WOUND_CONFIG_JSON  JSON file of parameter overrides
+%   WOUND_SAVE_VIDEO   1 to record a video of every timestep
+%
+% Output folder: results/force_closure_gradual_intercalation_[tag_]<timestamp>/
+% (snapshots, energy, wound area, boundary diagnostics, event logs, workspace).
 
 addpath(genpath('../common'))
 addpath(genpath('./functions2D'))
@@ -46,7 +40,7 @@ param.woundType = 'circular';
 param.woundCircular.center = [param.Lx/2, param.Ly/2];
 param.woundCircular.radius = 2.0;
 
-% Optional, reproducible local parameter sweep; defaults remain in the parameter file.
+% Optional parameter overrides from a JSON file
 configFile = strtrim(getenv('WOUND_CONFIG_JSON'));
 if ~isempty(configFile)
     overrides = jsondecode(fileread(configFile));
@@ -72,7 +66,7 @@ runTag = strtrim(getenv('WOUND_RUN_TAG'));
 if ~isempty(runTag)
     resultPrefix = [resultPrefix runTag '_'];
 end
-saveDir = fullfile('results', 'TAHAFINAL', [resultPrefix todayStr]);
+saveDir = fullfile('results', [resultPrefix todayStr]);
 if ~exist(saveDir, 'dir')
     mkdir(saveDir);
 end
@@ -92,9 +86,7 @@ param.cellIDtoContract = woundEdgeCells;
 celldata.woundEdges = woundEdges;
 celldata.cellIDtoContract = woundEdgeCells;
 
-% Reference wound area from the ordered geometric boundary. Area deficit
-% is logged separately because division and topology changes can make it a
-% poor proxy for the actual opening.
+% Reference wound area and perimeter from the ordered wound loop
 celldata.A = getCellAreas(celldata, param);
 initialDiagnostics = getWoundDiagnostics(celldata, param);
 if ~initialDiagnostics.loopValid || ~isfinite(initialDiagnostics.loopArea)
@@ -153,8 +145,7 @@ intercalationEventLog = cell(param.Nsteps,1);
 sealEventLog = cell(param.Nsteps,1);
 
 %% Optional every-timestep video recording
-% Enable with WOUND_SAVE_VIDEO=1.  The first frame is the initial state
-% (timestep 0), followed by one frame after each completed timestep.
+% Enable with WOUND_SAVE_VIDEO=1 (one frame per timestep).
 saveVideo = any(strcmpi(strtrim(getenv('WOUND_SAVE_VIDEO')), ...
     {'1', 'true', 'yes'}));
 videoFilename = '';
@@ -204,8 +195,7 @@ for tstep = 1:param.Nsteps
 
     %% Closure-state update
     if isfield(param, 'enforceMonotonicEnergy') && param.enforceMonotonicEnergy
-        % Keep the energy functional fixed in time. There is no wound-area
-        % resistance or non-conservative crawling in this mode.
+        % Fixed coefficients, no crawling, no wound-area term.
         celldata.Kw_current = 0;
         celldata.lambda_current = param.lambda_purse_string;
         celldata.crawl_current = 0;
@@ -277,26 +267,22 @@ for tstep = 1:param.Nsteps
         end
     end
 
-    %% T1 (force + energy gated, Metropolis uphill acceptance)
+    %% Bulk T1 transitions (force + energy gated)
     nT1_before = param.nT1;
     if param.enableT1transitions
         [celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell, T1flagVec,T1relaxstepcountVec,param.nT1, T1ForceLog] = ...
             checkT1transitions(celldata.nCells,celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell,param,T1flagVec,T1relaxstepcountVec,0, edgeForceData, tstep, T1ForceLog, celldata);
     end
     if param.nT1 > nT1_before
-        % Bulk T1 rewired connectivity -- the wound margin may have
-        % changed. See refreshWoundMargin.m for why staleness here is a
-        % real physics error, not just bookkeeping.
+        % Connectivity changed: recompute the wound margin.
         [celldata, param] = refreshWoundMargin(celldata, param);
     end
 
     param.Tsim = param.Tsim + param.deltat;
     celldata.r0 = celldata.r;
 
-    %% Cell division (force-based, third topological event type)
-    % See checkCellDivision.m / performCellDivision.m. Grows
-    % nMasterVertices/nCells -- every per-vertex array sized at the old
-    % nMasterVertices must grow with it.
+    %% Cell division (optional, force + energy gated)
+    % Division adds vertices, so per-vertex arrays are extended.
     nMasterVerticesBefore = celldata.nMasterVertices;
     [celldata, param, division_happened] = checkCellDivision(celldata, param);
     if division_happened
@@ -316,8 +302,7 @@ for tstep = 1:param.Nsteps
     energymat(tstep) = getTissueEnergyClassical(celldata,param);
     timemat(tstep)   = param.Tsim;
 
-    %% Wound sealing (force + energy gated) -- retires cells from the
-    % margin as opposing sides come into contact. See checkWoundSealing.m.
+    %% Wound sealing (optional, force + energy gated)
     [celldata, param, seal_happened, sealEvent] = ...
         checkWoundSealing(celldata, param, tstep);
     sealEventLog{tstep} = sealEvent;

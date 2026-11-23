@@ -1,17 +1,14 @@
 function [celldata, cellsToRemove] = createWound(celldata, woundShape, params, param)
 %CREATEWOUND Removes cells from celldata to create a wound of a specific shape.
-%   FINAL CORRECTED VERSION:
-%   - Calculates cell barycenters correctly for periodic boundary conditions.
-%   - Uses periodic distance to select cells for removal.
+%   Cell barycenters and distances are computed with periodic corrections.
 
-% Step 1: Calculate the PERODIC geometric center (barycenter) of every cell
+% Step 1: periodic barycenter of every cell
 numCells = celldata.nCells;
 cellCenters = zeros(numCells, 2);
 Lx = param.Lx;
 Ly = param.Ly;
 
 for i = 1:numCells
-    % --- NEW SECTION: Periodic Barycenter Calculation ---
     vertexIDs = celldata.connec{i};
     vertexCoords = celldata.r(vertexIDs, :);
     
@@ -45,7 +42,6 @@ for i = 1:numCells
     
     % Re-wrap the final barycenter coordinate into the box
     cellCenters(i, :) = mod(barycenter, [Lx, Ly]);
-    % --- END NEW SECTION ---
 end
 
 % Step 2: Identify which cells to remove based on the chosen shape

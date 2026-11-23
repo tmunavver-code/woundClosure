@@ -1,4 +1,4 @@
-%% Classical 2D vertex model for wound healing
+%% Wound set-up only: builds a wounded 30x30 tissue and plots its initial state
 addpath(genpath('../common'))
 addpath(genpath('./functions2D'))
 
@@ -44,13 +44,10 @@ celldata = genDataClassical(param);
 
 
 %%% Create the specified wound by removing cells
-%%% Create the specified wound by removing cells
 switch param.woundType
     case 'circular'
-        % --- FIX: Pass the main 'param' struct as the fourth argument ---
         [celldata, ~] = createWound(celldata, 'circular', param.woundCircular, param);
     case 'elliptical'
-        % --- FIX: Pass the main 'param' struct as the fourth argument ---
         [celldata, ~] = createWound(celldata, 'elliptical', param.woundElliptical, param);
     case 'none'
         disp('No wound will be created.');
@@ -60,7 +57,6 @@ end
 
 
 %%% Identify wound edge cells for purse-string contraction
-% This function now works on the tissue that has had cells removed.
 [woundEdgeCells, woundEdges] = findWoundEdgeCells(celldata);
 param.cellIDtoContract = woundEdgeCells; % The cells that will pull
 celldata.woundEdges = woundEdges;
@@ -80,11 +76,8 @@ pause(5)
 
 
 %% 3 - Computing
-% ... (The rest of your time loop and post-processing code remains the same) ...
-% Ensure you are using the optimized versions of getTissueEnergy and getVertexForces
-% if you are running the optimized simulation loop.
+% Storage for a time loop (see myMainClassical.m for the full simulation)
 
 totalsimtime = tic;
 final_tstep = param.Nsteps;
 energymat = zeros(final_tstep,1);
-% ... (and so on) ...

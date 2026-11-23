@@ -1,11 +1,9 @@
-%% runForceBasedTransitions: Force-Based Transitions — Comprehensive Results
+%% runForceBasedTransitions: force-instrumented wound simulation
 %
-% Follows the strategy in README_force_based_transitions.md:
-%   Phase 1: Instrument & validate the force field
-%   Phase 2: Force-based transition criterion (Bell's law)
+% Runs the wound model with force-based (Bell's law) T1 and margin events and
+% records the edge-force field throughout the run.
 %
-% Saves ALL results (plots, snapshots, workspace) to:
-%   results/wound_contractility/
+% Saves plots, snapshots and the workspace to results/wound_contractility/
 %
 % Key outputs:
 %   - Tissue snapshot photos at multiple timesteps (with forces per length)
@@ -28,7 +26,7 @@ clc;
 rng('default');
 
 %% ========================================================================
-%  1 — PARAMETERS
+%  1 - PARAMETERS
 % =========================================================================
 param.Lx = 15;
 param.Ly = 15;
@@ -41,7 +39,7 @@ SingleCellContractionParameters;
 param.enableT1transitions = true;
 param.enhanceT1atWound    = true;
 
-% --- TEMP: shortened run for quick validation (revert to 3000 for full runs) ---
+% --- Run length ---
 param.Nsteps = 1000;
 
 % --- Force-based transitions are ON (set in SingleCellContractionParameters) ---
@@ -62,7 +60,7 @@ param.woundElliptical.y_axis = 1.0;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% ========================================================================
-%  2 — OUTPUT DIRECTORY
+%  2 - OUTPUT DIRECTORY
 % =========================================================================
 saveDir = 'results/wound_contractility';
 if ~exist(saveDir, 'dir')
@@ -71,7 +69,7 @@ end
 fprintf('Results will be saved to: %s\n', saveDir);
 
 %% ========================================================================
-%  3 — GENERATE MESH & CREATE WOUND
+%  3 - GENERATE MESH & CREATE WOUND
 % =========================================================================
 celldata = genDataClassical(param);
 
@@ -89,7 +87,7 @@ param.cellIDtoContract = woundEdgeCells;
 celldata.woundEdges = woundEdges;
 
 %% ========================================================================
-%  4 — RUN SIMULATION
+%  4 - RUN SIMULATION
 % =========================================================================
 totalsimtime = tic;
 
@@ -129,7 +127,7 @@ for tstep = 1:param.Nsteps
     
     celldata.f = getVertexForcesClassical(celldata, param, tstep);
     
-    % --- Compute edge forces ONCE per step (Phase 1b fix) ---
+    % --- Edge forces, computed once per step ---
     currentEdgeForces = getEdgeForces(celldata, param, tstep);
     
     % --- Collect force-per-length stats ---
@@ -278,7 +276,7 @@ fprintf('\n=== Simulation finished in %.2f minutes ===\n', simTime / 60);
 fprintf('Total T1 transitions: %d\n', param.nT1);
 
 %% ========================================================================
-%  5 — POST-PROCESSING & RESULT FIGURES
+%  5 - POST-PROCESSING & RESULT FIGURES
 % =========================================================================
 
 finalEdgeForces = getEdgeForces(celldata, param, param.Nsteps);
@@ -286,7 +284,7 @@ finalEdgeForces = getEdgeForces(celldata, param, param.Nsteps);
 % --- Fig 1: Final state 4-panel force distribution ---
 fig1 = figure('visible', 'off', 'Position', [100 100 1400 1000]);
 plotEdgeForces(celldata, param, finalEdgeForces, param.Nsteps, 'all');
-sgtitle(sprintf('Edge Force Distribution — Final (t=%d) | p0=%.2f', ...
+sgtitle(sprintf('Edge Force Distribution - Final (t=%d) | p0=%.2f', ...
     param.Nsteps, param.p0), 'FontSize', 14);
 saveas(fig1, fullfile(saveDir, '01_edge_forces_final_4panel.png'));
 close(fig1);
@@ -294,14 +292,14 @@ close(fig1);
 % --- Fig 2: Force vectors per unit length at final state ---
 fig2 = figure('visible', 'off', 'Position', [100 100 900 800]);
 plotEdgeForces(celldata, param, finalEdgeForces, param.Nsteps, 'vectors_per_length');
-title(sprintf('Edge Force Vectors / Length — Final (t=%d)', param.Nsteps));
+title(sprintf('Edge Force Vectors / Length - Final (t=%d)', param.Nsteps));
 saveas(fig2, fullfile(saveDir, '02_force_per_length_final.png'));
 close(fig2);
 
 % --- Fig 3: Force vectors (total) at final state ---
 fig3 = figure('visible', 'off', 'Position', [100 100 900 800]);
 plotEdgeForces(celldata, param, finalEdgeForces, param.Nsteps, 'vectors');
-title(sprintf('Edge Force Vectors — Final (t=%d)', param.Nsteps));
+title(sprintf('Edge Force Vectors - Final (t=%d)', param.Nsteps));
 saveas(fig3, fullfile(saveDir, '03_force_vectors_final.png'));
 close(fig3);
 
@@ -329,7 +327,7 @@ grid on;
 saveas(fig5, fullfile(saveDir, '05_energy_vs_time.png'));
 close(fig5);
 
-% --- Fig 6: T1 Force-vs-Length scatter (Phase 1 diagnostic) ---
+% --- Fig 6: T1 force-vs-length scatter ---
 if ~isempty(T1ForceLog)
     fig6 = figure('visible', 'off', 'Position', [100 100 1100 450]);
     subplot(1,2,1);
@@ -344,19 +342,19 @@ if ~isempty(T1ForceLog)
     title('T1: Normal Pressure'); grid on;
     cb = colorbar; cb.Label.String = 'Timestep';
     
-    sgtitle('Forces at the Moment of T1 Transition (Phase 1 Diagnostic)');
+    sgtitle('Forces at the Moment of T1 Transition');
     saveas(fig6, fullfile(saveDir, '06_t1_forces_vs_length.png'));
     close(fig6);
 else
-    fprintf('No T1 transitions occurred — skipping force-vs-length scatter.\n');
+    fprintf('No T1 transitions occurred - skipping force-vs-length scatter.\n');
 end
 
-% --- Fig 7: Trepat Validation — single snapshot ---
+% --- Fig 7: Trepat comparison, single snapshot ---
 fig7 = validateTrepatForces(finalEdgeForces, param, param.Nsteps);
 saveas(fig7, fullfile(saveDir, '07_trepat_single_snapshot.png'));
 close(fig7);
 
-% --- Fig 8: Trepat Validation — TIME-AVERAGED (Phase 1 requirement) ---
+% --- Fig 8: Trepat comparison, time-averaged ---
 fig8 = validateTrepatForces(edgeForceSnapshots, param, param.Nsteps, 'timeAverage', true);
 saveas(fig8, fullfile(saveDir, '08_trepat_time_averaged.png'));
 close(fig8);
@@ -398,7 +396,7 @@ xlabel('|F_{norm}| / L'); ylabel('Count');
 title('Normal Force / Length Distribution');
 grid on;
 
-sgtitle(sprintf('Force per Length Histograms — Final (t=%d)', param.Nsteps));
+sgtitle(sprintf('Force per Length Histograms - Final (t=%d)', param.Nsteps));
 saveas(fig10, fullfile(saveDir, '10_force_per_length_histogram.png'));
 close(fig10);
 
@@ -445,13 +443,13 @@ saveas(fig12, fullfile(saveDir, '12_wound_vs_bulk_force_per_length.png'));
 close(fig12);
 
 %% ========================================================================
-%  6 — SAVE WORKSPACE & SUMMARY
+%  6 - SAVE WORKSPACE & SUMMARY
 % =========================================================================
 save(fullfile(saveDir, 'workspace.mat'));
 
 % Write a summary text file
 fid = fopen(fullfile(saveDir, 'RUN_SUMMARY.txt'), 'w');
-fprintf(fid, 'Force-Based Transitions Run — Comprehensive Results\n');
+fprintf(fid, 'Force-Based Transitions Run - Comprehensive Results\n');
 fprintf(fid, '==========================================================\n');
 fprintf(fid, 'Date: %s\n', datestr(now));
 fprintf(fid, 'Case: %s\n', Case);

@@ -1,5 +1,5 @@
 """
-Faithful NumPy port of the 2D_VX_model mechanics (no wound terms), for a
+NumPy port of the 2D_VX_model mechanics (no wound terms), for a
 fixed-topology mesh in which every cell has the same number of vertices.
 
 Mirrors, formula for formula:

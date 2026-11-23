@@ -1,10 +1,7 @@
 %% Classical 2D vertex model for wound healing
 %
-% MODIFIED:
-% 1. ADDED: Force visualization plot inside the main time loop.
-% 2. ADDED: Call to 3-cell intercalation function (checkWoundIntercalations)
-% 3. ADDED: Logic to save all plots to a unique, timestamped folder
-%    with detailed run parameters in the name.
+% Wound-closure run with a live force plot, three-cell wound intercalation,
+% and figures saved to a timestamped folder named after the run parameters.
 %
 addpath(genpath('../common'))
 addpath(genpath('./functions2D'))
@@ -47,7 +44,7 @@ param.woundElliptical.y_axis = 1.0;                      % Semi-axis in y-direct
 
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% --- NEW: CREATE SAVE DIRECTORY (with detailed name) ---
+% --- CREATE SAVE DIRECTORY (with detailed name) ---
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % --- 1. Build Wound String ---
@@ -111,8 +108,8 @@ end
 
 %%% Identify wound edge cells for purse-string contraction
 [woundEdgeCells, woundEdges] = findWoundEdgeCells(celldata);
-param.cellIDtoContract = woundEdgeCells; % <-- THIS IS STILL NEEDED for plot3Dtissue coloring
-celldata.woundEdges = woundEdges; % <-- THIS IS NOW THE IMPORTANT PART
+param.cellIDtoContract = woundEdgeCells; % wound-margin cells (also used for colouring)
+celldata.woundEdges = woundEdges; % free wound edges (purse string acts here)
 celldata.cellIDtoContract = woundEdgeCells; % Store in celldata as well
 
 
@@ -129,7 +126,7 @@ hold off;
 pause(5)
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% --- NEW: SAVE FIGURE 2 ---
+% --- SAVE FIGURE 2 ---
 fig2_path = fullfile(saveDirName, '01_Initial_State.png');
 saveas(figure(2), fig2_path);
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -162,7 +159,7 @@ for tstep = 1:param.Nsteps
     
     
     % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % --- NEW: PRIORITY 2 - VISUAL REPRESENTATION OF FORCES ---
+    % --- VISUAL REPRESENTATION OF FORCES ---
     % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     if param.plotForces && mod(tstep, param.plotForces_Interval) == 0
         
@@ -196,14 +193,13 @@ for tstep = 1:param.Nsteps
         drawnow; % Force MATLAB to render the plot
         
         % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        % --- NEW: SAVE FIGURE 10 (Force Plot) ---
+        % --- SAVE FIGURE 10 (Force Plot) ---
         fig10_filename = sprintf('02_Forces_Tstep_%05d.png', tstep); % %05d pads with zeros
         fig10_path = fullfile(saveDirName, fig10_filename);
         saveas(figure(param.plotForces_FigHandle), fig10_path);
         % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     end
     % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % --- END OF NEW SECTION ---
     % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     
     
@@ -215,14 +211,14 @@ for tstep = 1:param.Nsteps
     [celldata.P, celldata.EdgeData] = getCellPerimeters(celldata.nCells,celldata.r,celldata.connec,param,0);
     
     % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % --- NEW: 3-CELL WOUND INTERCALATION (PRIORITY) ---
+    % --- 3-CELL WOUND INTERCALATION ---
     % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % This event changes the topology, so it must run first.
     if param.enableWoundIntercalations
         
         [celldata, T1flagVec, intercalation_happened] = checkWoundIntercalations(celldata, param, T1flagVec);
         
-        % If an event occurred, the geometry is invalid. We MUST recalculate
+        % If an event occurred, the geometry has changed: recalculate
         % Areas and Perimeters before proceeding to T1 checks or force calcs.
         if intercalation_happened
             celldata.A = getCellAreas(celldata,param);

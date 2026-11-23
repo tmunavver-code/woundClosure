@@ -29,7 +29,7 @@ end
 allVerts = keys(adj);
 for i = 1:length(allVerts)
     if numel(adj(allVerts{i})) ~= 2
-        % Not a simple closed loop -- bail out safely.
+        % Not a simple closed loop.
         return;
     end
 end

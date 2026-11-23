@@ -1,0 +1,5 @@
+Computed from workspace.mat of this run.
+Margin perimeter-contractility factor (contractilityFactorLog) rises at every timestep 1-1000 (t = 0.01 to 10), from 1 to 2.973334453234.
+Energy plot: red points mark every 100th step; per-step values are in the CSV.
+Purse-string tension from the recruitment recurrence (matches the saved final value): final tension 3.946668906468.
+Perimeter energy coefficient = contractility factor / rstiff: bulk 2, final margin 5.946668906468 (model units).

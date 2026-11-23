@@ -1,4 +1,6 @@
 function metrics = runEnergyParameterTrial(configPath,tag)
+% Runs the wound-closure simulation with parameter overrides read from a JSON
+% file (configPath) and saves it under results/ with the given tag.
 setenv('WOUND_CONFIG_JSON',configPath);
 setenv('WOUND_RUN_TAG',tag);
 runClock=tic;
@@ -28,7 +30,7 @@ param.woundType = 'circular';
 param.woundCircular.center = [param.Lx/2, param.Ly/2];
 param.woundCircular.radius = 2.0;
 
-% Optional, reproducible local parameter sweep; defaults remain in the parameter file.
+% Optional parameter overrides from a JSON file
 configFile = strtrim(getenv('WOUND_CONFIG_JSON'));
 if ~isempty(configFile)
     overrides = jsondecode(fileread(configFile));
@@ -54,7 +56,7 @@ runTag = strtrim(getenv('WOUND_RUN_TAG'));
 if ~isempty(runTag)
     resultPrefix = [resultPrefix runTag '_'];
 end
-saveDir = fullfile('results', 'TAHAFINAL', [resultPrefix todayStr]);
+saveDir = fullfile('results', [resultPrefix todayStr]);
 if ~exist(saveDir, 'dir')
     mkdir(saveDir);
 end
@@ -74,9 +76,7 @@ param.cellIDtoContract = woundEdgeCells;
 celldata.woundEdges = woundEdges;
 celldata.cellIDtoContract = woundEdgeCells;
 
-% Reference wound area from the ordered geometric boundary. Area deficit
-% is logged separately because division and topology changes can make it a
-% poor proxy for the actual opening.
+% Reference wound area and perimeter from the ordered wound loop
 celldata.A = getCellAreas(celldata, param);
 initialDiagnostics = getWoundDiagnostics(celldata, param);
 if ~initialDiagnostics.loopValid || ~isfinite(initialDiagnostics.loopArea)
@@ -129,8 +129,7 @@ for tstep = 1:param.Nsteps
 
     %% Closure-state update
     if isfield(param, 'enforceMonotonicEnergy') && param.enforceMonotonicEnergy
-        % Keep the energy functional fixed in time. There is no wound-area
-        % resistance or non-conservative crawling in this mode.
+        % Fixed coefficients, no crawling, no wound-area term.
         celldata.Kw_current = 0;
         celldata.lambda_current = param.lambda_purse_string;
         celldata.crawl_current = 0;
@@ -205,16 +204,14 @@ for tstep = 1:param.Nsteps
     end
 
     energyPhases(tstep,4) = getTissueEnergyClassical(celldata,param);
-    %% T1 (force + energy gated, Metropolis uphill acceptance)
+    %% Bulk T1 transitions (force + energy gated)
     nT1_before = param.nT1;
     if param.enableT1transitions
         [celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell, T1flagVec,T1relaxstepcountVec,param.nT1, T1ForceLog] = ...
             checkT1transitions(celldata.nCells,celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell,param,T1flagVec,T1relaxstepcountVec,0, edgeForceData, tstep, T1ForceLog, celldata);
     end
     if param.nT1 > nT1_before
-        % Bulk T1 rewired connectivity -- the wound margin may have
-        % changed. See refreshWoundMargin.m for why staleness here is a
-        % real physics error, not just bookkeeping.
+        % Connectivity changed: recompute the wound margin.
         [celldata, param] = refreshWoundMargin(celldata, param);
     end
 
@@ -222,10 +219,8 @@ for tstep = 1:param.Nsteps
     param.Tsim = param.Tsim + param.deltat;
     celldata.r0 = celldata.r;
 
-    %% Cell division (force-based, third topological event type)
-    % See checkCellDivision.m / performCellDivision.m. Grows
-    % nMasterVertices/nCells -- every per-vertex array sized at the old
-    % nMasterVertices must grow with it.
+    %% Cell division (optional, force + energy gated)
+    % Division adds vertices, so per-vertex arrays are extended.
     nMasterVerticesBefore = celldata.nMasterVertices;
     [celldata, param, division_happened] = checkCellDivision(celldata, param);
     if division_happened
@@ -245,8 +240,7 @@ for tstep = 1:param.Nsteps
     energymat(tstep) = getTissueEnergyClassical(celldata,param);
     timemat(tstep)   = param.Tsim;
 
-    %% Wound sealing (force + energy gated) -- retires cells from the
-    % margin as opposing sides come into contact. See checkWoundSealing.m.
+    %% Wound sealing (optional, force + energy gated)
     [celldata, param, seal_happened, sealEvent] = ...
         checkWoundSealing(celldata, param, tstep);
     sealEventLog{tstep} = sealEvent;

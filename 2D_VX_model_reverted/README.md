@@ -24,12 +24,11 @@ This directory contains an older, "reverted" version of the **Classical 2D Verte
 
 ## 3. Core Physics, Energy, and Force Calculation
 
-*Note: The force calculation here differs significantly from the newer version.*
+*The force calculation here is an earlier version of the one in `2D_VX_model`.*
 
 - **`getTissueEnergyClassical.m`**: Calculates the total pseudo-energy of the cellular collective.
 - **`getVertexForcesClassical.m`**: Calculates forces acting on vertices via energy gradients. **Important differences in this reverted version:**
-  - *REMOVED:* The old whole-cell contraction approach (which modified the preferred perimeter $p_0$).
-  - *ADDED:* A newer edge-specific "purse-string" force calculation, localizing contraction forces to specific wound edges.
+  - Wound contraction is applied as an edge-specific purse-string force on the wound edges (instead of changing the preferred perimeter $p_0$ of whole cells).
 - **`updateVertexPositions.m`**: Updates the current vertex positions using nodal forces.
 - **`updateCellData.m`**: Updates cell geometry data based on new vertex positions.
 
@@ -47,7 +46,7 @@ This directory contains an older, "reverted" version of the **Classical 2D Verte
 - **`performT1swap.m`**: Executes a neighbor swap. Takes a triggered T1 tolerance for vertex bounce mechanics.
 - **`checkWoundIntercalations.m`**: **Important differences in this reverted version:**
   - Implements a 3-cell intercalation (topologically a T2 extrusion) at the wound margin using a "Vertex Merge & Orphan" method.
-  - *Note:* This is "Version 1" of this logic and contains a known bug where the wound cell remains attached to the master vertex (`v1_master`).
+  - This is the first version of this logic; the current version is in `2D_VX_model/checkWoundIntercalations.m`.
 
 ## 6. Wound Healing Initialization (functions2D)
 

@@ -1,13 +1,8 @@
 function [coordinates, connectivity, edgedata,verttocell, T1flagVec,T1relaxstepcountVec, nT1]   = checkT1transitions(nCells,coordinates, connectivity, edgedata,verttocell,param,T1flagVec,T1relaxstepcountVec,imAugmented)
 %% checkT1transitions: Checks for and performs a T1 transition
 %
-% MODIFIED:
-% 1. Implements enhanced T1 intercalation (fluidity) at the wound margin
-%    by using a separate, more permissive tolerance (param.T1_TOL_wound).
-% 2. Fixes bug in T1flagVec logic: flags are now correctly applied to
-%    vertices (vertID1, vertID2) instead of the local edge index (j).
-% 3. Passes the triggered T1 tolerance ('current_T1_TOL') into
-%    performT1swap.
+% Uses a larger edge-length tolerance (param.T1_TOL_wound) for wound-margin
+% cells and passes the triggering tolerance to performT1swap.
 %
 
 nT1 = param.nT1;
@@ -36,7 +31,7 @@ for cellID = 1:nCells
         % Only proceed if neither vertex is in a relaxation period
         if T1flagVec(vertID1) == 0 && T1flagVec(vertID2) == 0
             
-            % --- NEW: Determine correct T1 tolerance ---
+            % --- Determine correct T1 tolerance ---
             % Start with the default bulk tolerance
             current_T1_TOL = param.T1_TOL_bulk;
             
@@ -48,7 +43,6 @@ for cellID = 1:nCells
                     current_T1_TOL = param.T1_TOL_wound;
                 end
             end
-            % --- END NEW ---
             
             
             % --- Now, check edge length with the correct tolerance ---
@@ -58,7 +52,6 @@ for cellID = 1:nCells
                 [cellID1, cellID2, cellID3, cellID4] = getT1cellIDs(vertID1, vertID2,  verttocell,connectivity);
                 
                 % Perform the T1 transition
-                % --- MODIFIED: Pass current_T1_TOL as the last argument ---
                 [coordinates, connectivity, edgedata,verttocell] = performT1swap(cellID1, cellID2, cellID3, cellID4, coordinates, connectivity, edgedata,verttocell, vertID1, vertID2, param,imAugmented, current_T1_TOL);
                 
                 % Display status

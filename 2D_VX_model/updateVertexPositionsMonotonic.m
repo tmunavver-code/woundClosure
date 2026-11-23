@@ -1,8 +1,6 @@
 function [celldata, stepScale] = updateVertexPositionsMonotonic(celldata, param)
 % UPDATEVERTEXPOSITIONSMONOTONIC Backtracked overdamped vertex update.
-% The explicit Euler proposal is shortened until the fixed mechanical
-% energy does not increase. This is needed near newly created short edges,
-% where the full timestep can overshoot even along a descent force.
+% The explicit Euler step is halved until the mechanical energy does not increase.
 
 energyBefore = getTissueEnergyClassical(celldata, param);
 coordinatesBefore = celldata.r;
@@ -27,8 +25,7 @@ for backtrack = 0:20
     stepScale = 0.5 * stepScale;
 end
 
-% If no finite descent step is found, keep the current configuration. This
-% is safer than injecting energy through an unstable explicit update.
+% No descent step found: keep the current configuration.
 stepScale = 0;
 celldata.r = coordinatesBefore;
 

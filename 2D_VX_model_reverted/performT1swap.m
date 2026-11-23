@@ -1,8 +1,7 @@
 function [coordinates, connectivity, edgedata,verttocell] = performT1swap(cellID1, cellID2, cellID3, cellID4, coordinates,connectivity,edgedata,verttocell, node1, node2, param, imAugmented, T1_TOL_triggered)
 %
-% MODIFIED:
-% 1. Function now accepts 'T1_TOL_triggered' as the last argument.
-% 2. Replaced 'param.T1_TOL' with 'T1_TOL_triggered' for vertex bounce.
+% The new edge is created with a length set by the tolerance that triggered
+% the transition (T1_TOL_triggered).
 %
 
 Pos1 = coordinates(node1,:);
@@ -10,8 +9,8 @@ Pos2 = coordinates(node2,:);
 
 % First we separate the two nodes further away from the threshold
 vec = Pos2 - Pos1;
-newPos1 = Pos1 - 0.52 * T1_TOL_triggered * vec/norm(vec); % <-- MODIFIED
-newPos2 = Pos2 + 0.52 * T1_TOL_triggered * vec/norm(vec); % <-- MODIFIED
+newPos1 = Pos1 - 0.52 * T1_TOL_triggered * vec/norm(vec);
+newPos2 = Pos2 + 0.52 * T1_TOL_triggered * vec/norm(vec);
 coordinates(node1,:) = newPos1;
 coordinates(node2,:) = newPos2;
 normNewvec = norm(newPos2 - newPos1);

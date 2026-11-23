@@ -1,18 +1,19 @@
 function metrics=continueEnergyTrial(workspacePath,extraSteps)
+% Continues a saved run (workspace.mat) for extraSteps more timesteps and
+% saves the extended run as a new folder under results/.
 addpath(genpath('../common'));addpath(genpath('./functions2D'));
 load(workspacePath);
 previousSteps=param.Nsteps;param.Nsteps=previousSteps+extraSteps;
 runClock=tic;
-saveDir=fullfile('results','TAHAFINAL',['force_closure_gradual_intercalation_refined_eta2_extended_' datestr(now,'yyyy-mm-dd_HHMMSS')]);
-mkdir(saveDir);setenv('WOUND_RUN_TAG','refined_eta2_extended');
+saveDir=fullfile('results',['force_closure_gradual_intercalation_extended_' datestr(now,'yyyy-mm-dd_HHMMSS')]);
+mkdir(saveDir);setenv('WOUND_RUN_TAG','extended');
 for tstep = previousSteps+1:param.Nsteps
 
     [energymat0] = getTissueEnergyClassical(celldata,param);
 
     %% Closure-state update
     if isfield(param, 'enforceMonotonicEnergy') && param.enforceMonotonicEnergy
-        % Keep the energy functional fixed in time. There is no wound-area
-        % resistance or non-conservative crawling in this mode.
+        % Fixed coefficients, no crawling, no wound-area term.
         celldata.Kw_current = 0;
         celldata.lambda_current = param.lambda_purse_string;
         celldata.crawl_current = 0;
@@ -87,16 +88,14 @@ for tstep = previousSteps+1:param.Nsteps
     end
 
     energyPhases(tstep,4) = getTissueEnergyClassical(celldata,param);
-    %% T1 (force + energy gated, Metropolis uphill acceptance)
+    %% Bulk T1 transitions (force + energy gated)
     nT1_before = param.nT1;
     if param.enableT1transitions
         [celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell, T1flagVec,T1relaxstepcountVec,param.nT1, T1ForceLog] = ...
             checkT1transitions(celldata.nCells,celldata.r,celldata.connec,celldata.EdgeData,celldata.verttocell,param,T1flagVec,T1relaxstepcountVec,0, edgeForceData, tstep, T1ForceLog, celldata);
     end
     if param.nT1 > nT1_before
-        % Bulk T1 rewired connectivity -- the wound margin may have
-        % changed. See refreshWoundMargin.m for why staleness here is a
-        % real physics error, not just bookkeeping.
+        % Connectivity changed: recompute the wound margin.
         [celldata, param] = refreshWoundMargin(celldata, param);
     end
 
@@ -104,10 +103,8 @@ for tstep = previousSteps+1:param.Nsteps
     param.Tsim = param.Tsim + param.deltat;
     celldata.r0 = celldata.r;
 
-    %% Cell division (force-based, third topological event type)
-    % See checkCellDivision.m / performCellDivision.m. Grows
-    % nMasterVertices/nCells -- every per-vertex array sized at the old
-    % nMasterVertices must grow with it.
+    %% Cell division (optional, force + energy gated)
+    % Division adds vertices, so per-vertex arrays are extended.
     nMasterVerticesBefore = celldata.nMasterVertices;
     [celldata, param, division_happened] = checkCellDivision(celldata, param);
     if division_happened
@@ -127,8 +124,7 @@ for tstep = previousSteps+1:param.Nsteps
     energymat(tstep) = getTissueEnergyClassical(celldata,param);
     timemat(tstep)   = param.Tsim;
 
-    %% Wound sealing (force + energy gated) -- retires cells from the
-    % margin as opposing sides come into contact. See checkWoundSealing.m.
+    %% Wound sealing (optional, force + energy gated)
     [celldata, param, seal_happened, sealEvent] = ...
         checkWoundSealing(celldata, param, tstep);
     sealEventLog{tstep} = sealEvent;

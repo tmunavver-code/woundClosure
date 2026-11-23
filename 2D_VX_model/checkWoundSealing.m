@@ -48,7 +48,7 @@ for a = 1:numel(marginVerts)-1
         v2 = marginVerts(b);
         if isempty(celldata.verttocell{v2}), continue; end
 
-        % --- Gate 1a: must not already share a cell (see header) ---
+        % --- Gate 1a: vertices must not already share a cell ---
         if ~isempty(intersect(celldata.verttocell{v1}, celldata.verttocell{v2}))
             continue;
         end

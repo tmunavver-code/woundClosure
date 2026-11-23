@@ -48,7 +48,7 @@ nSkippedShort = 0;
 for i = 1:nEdges
     L = edgeForceData(i).length;
 
-    % --- Physical minimum-length guard (Bug 1) ---
+    % --- Minimum-length guard ---
     if L < minEdgeLen
         nSkippedShort = nSkippedShort + 1;
         continue;
@@ -89,7 +89,7 @@ if isempty(r_valid)
     return;
 end
 
-%% -------- Adaptive bin count (Bug 3) --------
+%% -------- Adaptive bin count --------
 % Aim for ~minCount*2 edges per bin on average; cap between 6 and 15 bins.
 if isempty(opt.nBins)
     targetPerBin = max(2 * opt.minCount, 6);
@@ -118,7 +118,7 @@ for b = 1:nBins
     n = sum(inBin);
     N_perbin(b) = n;
 
-    % --- Blank out under-sampled bins as NaN (Bugs 4 & 5) ---
+    % --- Under-sampled bins are left as NaN ---
     if n >= opt.minCount
         Fr_binned(b) = mean(Fr_valid(inBin));
         Ft_binned(b) = mean(Ft_valid(inBin));

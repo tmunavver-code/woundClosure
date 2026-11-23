@@ -1,6 +1,6 @@
 function f = getVertexForcesClassical(celldata,param,tstep)
 %% getVertexForcesClassical: Computes net forces on vertices from energy gradients
-% Includes stability guards for degenerate cells (<3 vertices).
+% Area/perimeter forces, crawling, purse string and optional wound-area term.
 
 f = zeros(size(celldata.f));
 Lx = param.Lx;

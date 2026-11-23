@@ -2,7 +2,7 @@ function [cellID1, cellID2, cellID3, cellID4] = getT1cellIDs(node1, node2, vertt
 % Find the cells corresponding to the edge to be flipped to perform the T1
 % transition.
 
-% Initialize outputs — guarantees all are assigned even if topology is invalid
+% Outputs stay -1 if the local topology is invalid
 cellID1 = -1; cellID2 = -1; cellID3 = -1; cellID4 = -1;
 
 connectedcellsnode1 = verttocell{node1};

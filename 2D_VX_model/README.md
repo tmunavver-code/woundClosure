@@ -1,351 +1,569 @@
-# 2D Vertex Model for Epithelial Tissue Dynamics and Wound Closure
+# 2D Vertex Model of Epithelial Wound Closure
 
-A biophysical MATLAB implementation of a **2D Vertex Model (VM)** designed to simulate epithelial tissue mechanics, cell shape dynamics, force transmission, and multi-mechanism epithelial wound closure. 
+A MATLAB implementation of a two-dimensional vertex model for epithelial tissue mechanics and wound closure. The tissue is a periodic network of polygonal cells whose vertices move under passive cell-mechanical forces and active wound-closing forces. Topological events (neighbour exchanges and wound-margin rearrangements) are selected using the local mechanical state and accepted through an energy criterion. The wound boundary is tracked directly as an ordered polygon throughout the simulation.
 
-The model resolves explicit vertex and edge forces from a mechanical pseudo-energy functional, incorporates dissipative over-damped dynamics, handles periodic boundary conditions (PBC), and couples biological wound closure mechanisms (actomyosin purse-string contraction, lamellipodial cell crawling, dynamic margin stiffening, cell division, and force-gated topological transitions).
-
----
-
-## Table of Contents
-1. [Overview of the Model](#overview-of-the-model)
-2. [Current Model State](#current-model-state)
-3. [Biological & Biophysical Mechanisms](#biological--biophysical-mechanisms)
-4. [File Directory and Intended Functions](#file-directory-and-intended-functions)
-5. [How to Run the Code (Execution Guide)](#how-to-run-the-code-execution-guide)
-   - [Prerequisites and Setup](#prerequisites-and-setup)
-   - [Workflow 1: Complete Wound Closure Simulation (`runMain.m`)](#workflow-1-complete-wound-closure-simulation-runmainm)
-   - [Workflow 2: Force-Based Closure Strategy Protocol (`runForceClosureStrategy.m`)](#workflow-2-force-based-closure-strategy-protocol-runforceclosurestrategym)
-   - [Workflow 3: Force-Gated Topological Transitions & Stress Analysis (`runForceBasedTransitions.m`)](#workflow-3-force-gated-topological-transitions--stress-analysis-runforcebasedtransitionsm)
-   - [Workflow 4: Edge Force Instrumentation & Trepat Monolayer Validation (`runEdgeForceAnalysis.m`)](#workflow-4-edge-force-instrumentation--trepat-monolayer-validation-runedgeforceanalysism)
-   - [Workflow 5: Classical Vertex Model Baseline (`mainClassical.m`)](#workflow-5-classical-vertex-model-baseline-mainclassicalm)
-   - [Workflow 6: Farhadifar Phase-Diagram Validation (`phaseDiagramValidation.m`)](#workflow-6-farhadifar-phase-diagram-validation-phasediagramvalidationm)
-   - [Workflow 7: Parameterized / Continued Trials (`runEnergyParameterTrial.m`, `continueEnergyTrial.m`)](#workflow-7-parameterized--continued-trials-runenergyparametertrialm-continueenergytrialm)
-6. [Key Model Parameters](#key-model-parameters)
-7. [Simulation Outputs and Results](#simulation-outputs-and-results)
+The folder also contains an independent validation of the implemented mechanics against the Farhadifar et al. (2007) soft/hexagonal phase diagram.
 
 ---
 
-## Overview of the Model
+## Contents
 
-In a 2D vertex model, an epithelial monolayer is represented as a planar polygonal network of vertices and shared edges. The mechanical state of the tissue is governed by a Farhadifar-style mechanical energy functional $E$:
-
-$$E = \sum_{\alpha \in \text{cells}} \left[ k_a (A_\alpha - A_0)^2 + \frac{1}{r_{\text{stiff}}} (P_\alpha - p_0)^2 \right] + \sum_{\langle ij \rangle \in \text{edges}} \Lambda_{ij} L_{ij} + E_{\text{wound}}$$
-
-Where:
-- $A_\alpha$ and $P_\alpha$ are the area and perimeter of cell $\alpha$.
-- $A_0$ and $p_0$ are the target (preferred) area and shape index ($p_0 = P_0 / \sqrt{A_0}$).
-- $k_a$ represents bulk area compressibility modulus.
-- $r_{\text{stiff}}$ controls perimeter elasticity and cortex contractility.
-- $\Lambda_{ij}$ is the intercellular adhesion/line tension along edge $\langle ij \rangle$.
-- $E_{\text{wound}}$ is an optional elastic-resistance term for the wound cavity (see [Current Model State](#current-model-state) — switched off by default in the current configuration).
-
-The net conservative force acting on vertex $i$ is obtained from the gradient of the energy:
-
-$$\mathbf{F}_i = -\nabla_{\mathbf{r}_i} E$$
-
-Cell motion follows over-damped dissipative dynamics balancing conservative and active forces against substrate/intercellular viscous drag:
-
-$$\eta \frac{d\mathbf{r}_i}{dt} = \mathbf{F}_i + \mathbf{F}_i^{\text{active}}$$
-
-Vertex positions are iteratively updated using an explicit (forward) Euler scheme, $\mathbf{r}_i(t+\Delta t) = \mathbf{r}_i(t) + \Delta t\, (\mathbf{F}_i + \mathbf{F}_i^{\text{active}}) / \eta$. A second, strictly energy-non-increasing integrator (`updateVertexPositionsMonotonic.m`) is also available: it backtracks the step size whenever a proposed move would raise the conservative energy, which is useful for runs immediately after a topological transition. All driver scripts seed MATLAB's random number generator (`rng('default')`) before building the initial mesh, so a given parameter set reproduces the same initial tessellation and simulation trajectory run to run.
+1. [Overview](#1-overview)
+2. [Model formulation](#2-model-formulation)
+3. [Final results](#3-final-results)
+4. [Getting started](#4-getting-started)
+5. [Reproducing the final results](#5-reproducing-the-final-results)
+6. [Other simulation scripts](#6-other-simulation-scripts)
+7. [Parameters](#7-parameters)
+8. [Output files](#8-output-files)
+9. [File reference](#9-file-reference)
+10. [Main data structures](#10-main-data-structures)
+11. [References](#11-references)
 
 ---
 
-## Current Model State
+## 1. Overview
 
-This section summarizes the current configuration of the model, as distinct from earlier versions of the code and the report.
+| Item | Value |
+| :--- | :--- |
+| Domain | Periodic square box, `Lx = Ly = 15` |
+| Initial tissue | Periodic Voronoi tessellation of 225 cells |
+| Wound | All cells with centres inside a circle of radius 2 at the box centre are removed, leaving 213 cells |
+| Tissue regime | Fluid-like, preferred shape index `p0 = 4` |
+| Passive mechanics | Area elasticity and perimeter elasticity of every cell |
+| Active mechanics | Purse-string line tension on the wound edges and inward lamellipodial crawling of the margin cells |
+| Recruitment | Purse string, crawling and margin stiffening are recruited smoothly in time on a decaying clock `Kw(t)` |
+| Topological events | Bulk T1 transitions, wound-margin handoffs, wound-corner trims (cell division and wound sealing available as options) |
+| Event rule | Bell-type force-dependent rate compared with a deterministic threshold, followed by an energy-acceptance test |
+| Dynamics | Overdamped vertex motion, explicit Euler integration, `dt = 0.01`, 1000 steps |
+| Wound measurement | Exact shoelace area of the ordered wound loop at every timestep |
+| Validation | Force/energy-gradient consistency test and reproduction of the Farhadifar soft/hexagonal phase boundary |
 
-- **Deterministic topological transitions.** T1 intercalations, wound-margin turnover (handoffs/trims), and wound sealing each still use a Bell's-law force-dependent rate to decide *eligibility*, but the final accept/reject step is now energy-gated deterministically: a transition is accepted only when it does not raise the total mechanical energy (the Metropolis uphill-acceptance temperatures `T_eff_T1`, `T_eff_T2`, and `T_eff_seal` are set to `0`). The stochastic Metropolis machinery itself remains in the code (and is still exercised by force-based cell division, which has its own non-zero `T_eff_div`), so a stochastic variant can be switched back on by raising the relevant `T_eff_*` parameter above zero.
-- **Wound-hole restoring force removed from the active dynamics.** The elastic wound-hole resistance term ($K_w$, following Tetley et al., 2019) is still implemented in `getVertexForcesClassical.m` and `getTissueEnergyClassical.m`, but it is switched off by default (`param.enableWoundResistance = false`): it no longer exerts a vertex force or contributes to the energy. `K_w`'s exponential decay is retained purely as a timing clock that paces the recruitment of purse-string tension, crawling, and margin stiffening (via first-order relaxation toward decay-dependent targets, rate `k_recruit`). Wound closure is therefore driven entirely by the active purse-string and crawling forces, not by any mechanical "spring" pulling the hole back toward its original shape.
-- **Farhadifar phase-diagram validation.** A new driver, `phaseDiagramValidation.m`, independently validates the vertex-model mechanics by reproducing the Farhadifar et al. (2007) soft/hexagonal network phase diagram directly from the repository's own `getVertexForcesClassical.m` / `getTissueEnergyClassical.m` functions — see [Workflow 6](#workflow-6-farhadifar-phase-diagram-validation-phasediagramvalidationm).
-- **New diagnostics and sanity checks.** `getWoundDiagnostics.m` computes a per-step summary of wound geometry/topology (boundary cell/edge counts, wound perimeter, ordered loop area), and `validateTissueTopology.m` checks mesh connectivity each step (vertex-index bounds, finite coordinates, degenerate cells).
-- **Parameterized and resumable trials.** `runEnergyParameterTrial.m` launches a fresh run from a JSON parameter-override file (`WOUND_CONFIG_JSON`) with a run tag (`WOUND_RUN_TAG`) and step count (`WOUND_NSTEPS`) read from environment variables, and `continueEnergyTrial.m` resumes a saved `workspace.mat` for additional steps under the same framework — see [Workflow 7](#workflow-7-parameterized--continued-trials-runenergyparametertrialm-continueenergytrialm).
-
----
-
-## Biological & Biophysical Mechanisms
-
-To capture realistic wound closure, the model couples physical force balances with biological responses:
-
-1. **Actomyosin Purse-String Ring**: Cells along the wound margin recruit an active contractile actomyosin cable, applying additional line tension $\lambda$ along wound-facing edges.
-2. **Active Lamellipodial Crawling**: Margin cells exert inward crawling traction forces directed toward the wound centroid.
-3. **Kw Recruitment Clock**: A decaying variable $K_w(t) = K_{w0} e^{-t/\tau_{K_w}}$ (following Tetley et al., 2019) times the recruitment of purse-string tension, crawling, and margin stiffening toward their target values. In the current default configuration $K_w$ no longer exerts a wound-area elastic force or energy itself (`param.enableWoundResistance = false`) — that force term remains implemented and can be re-enabled — so it acts purely as a timing signal.
-4. **Dynamic Margin Stiffening**: Margin cells undergo adaptive area compressibility and perimeter contractility stiffening ($k_a$ and $r_{\text{stiff}}$ ramp), recruited gradually toward their target multipliers (`ka_wound_factor`, `contractility_wound`) at the same pace as the Kw clock above.
-5. **Force-Gated Topological Transitions (Bell's Law)**:
-   - **T1 Transitions (Intercalations)**: Eligibility is driven by local edge tension $F$ via Bell's law rate:
-     $$k_{\text{off}}(F) = k_{\text{off}0} \exp\left(\frac{F}{f_\beta}\right)$$
-     In the current configuration the final accept/reject step is deterministic and energy-gated: a candidate transition is accepted only if it does not raise the total mechanical energy ($\Delta E \le 0$). The underlying Metropolis-style machinery (accepting an energy-increasing move with probability $\exp(-\Delta E / T_{\text{eff}})$) remains in the code for all transition types and is available by raising the corresponding `T_eff_*` parameter above zero.
-   - **Margin Intercalations (Turnover)**: Cells bordering the margin exchange neighbors by treating the wound as a pseudo-cell (following Tetley et al., 2019), allowing cells to be expelled from the margin while remaining intact. The margin's target cell count is reduced gradually as the margin perimeter contracts, so handoffs track the shrinking wound rather than firing all at once.
-   - **Wound Corner Trimming**: Non-convex corner vertices where both incident edges face the wound are trimmed to avoid topological deadlocks.
-6. **Stress-Oriented Cell Division** *(available, off by default)*: Over-expanded cells divide when exceeding an area threshold, gated by Bell's law on area-elastic pressure. Division cleavage planes pass through the cell centroid along its short axis (orthogonal to the principal elongation/tensile axis). Enable with `param.enableCellDivision = true`.
-7. **Wound Sealing** *(available, off by default)*: When opposing margins touch below a threshold distance, margin vertices coalesce, converting free boundary edges into internal edges and achieving complete scarless closure. Enable with `param.enableWoundSealing = true`.
-8. **Farhadifar Phase-Diagram Validation**: Independently of the wound-closure mechanisms above, `phaseDiagramValidation.m` relaxes periodic hexagonal-lattice tissues across a sweep of normalized line tension/contractility and compares the resulting mean cell shape index against the theoretical Farhadifar et al. (2007) soft/hexagonal boundary ($p_0^* = \sqrt{8\sqrt{3}} \approx 3.7224$), using the same energy and force functions as the wound-closure simulations. See [Workflow 6](#workflow-6-farhadifar-phase-diagram-validation-phasediagramvalidationm).
+The main simulation is `runForceClosureStrategy.m`. The phase-diagram validation is `phaseDiagramValidation.m`.
 
 ---
 
-## File Directory and Intended Functions
+## 2. Model formulation
 
-Below is the complete reference table of all files in `2D_VX_model/` and their specific functional roles.
+All quantities are in normalised model units (preferred cell area `A0 = 1`).
 
-| Filename | Category | Intended Function & Description |
-| :--- | :--- | :--- |
-| **`runMain.m`** | Driver Script | **Primary production simulation script.** Executes full 2000-timestep wound closure with purse-string, cell crawling, cell division, wound sealing, MP4 video generation, and comprehensive CSV metrics export to `final_results/`. |
-| **`runForceClosureStrategy.m`** | Driver Script | *(Formerly `runSunday.m`)* 1000-timestep force-based closure experiment testing $K_w$ decay feedback, purse-string/crawling recruitment, and force-gated T1/T2 transitions. |
-| **`runForceBasedTransitions.m`** | Driver Script | *(Formerly `runSaturday.m`)* Comprehensive force-instrumentation run validating Bell's law transitions, generating Trepat spatial profiles, force-vs-length scatter, and edge tension maps. |
-| **`runEdgeForceAnalysis.m`** | Driver Script | Standalone analysis script that simulates tissue mechanics and produces 4-panel force decomposition plots and vector field maps for all cell edges. |
-| **`phaseDiagramValidation.m`** | Driver / Validation | Reproduces the Farhadifar et al. (2007) soft/hexagonal phase diagram directly from the repository's energy/force functions: a force-vs-energy-gradient consistency check, a line sweep across $p_0$ at several $\bar\Gamma$ values, labelled example points, and relaxed-network figures. |
-| **`runEnergyParameterTrial.m`** | Driver Script | Launches a fresh, reproducible run from a JSON parameter-override file and run tag, read from the `WOUND_CONFIG_JSON` / `WOUND_RUN_TAG` / `WOUND_NSTEPS` environment variables; supports the monotonic-energy integration mode. |
-| **`continueEnergyTrial.m`** | Driver Script | Resumes a previously saved `workspace.mat` for additional timesteps under the same closure framework (used, e.g., for the `..._refined_eta2_extended` trials). |
-| **`mainClassical.m`** | Driver Script | Baseline classical 2D vertex model driver (Sohan Kale, Adam Ouzeri, Nikhil Walani) simulating unperturbed tissue dynamics with standard T1 swaps. |
-| **`myMainClassical.m`** | Driver Script | Classical vertex model variant adapted for wound scenarios with integrated real-time force visualization. |
-| **`myMainClassicalWoundOnly.m`** | Driver Script | Minimal baseline script running classical wound relaxation without active closure mechanisms. |
-| **`validateTrepatForces.m`** | Analysis / Validation | Validates spatial force profiles against Trepat et al. (2009/2014) monolayer stress microscopy profiles via radial and azimuthal force binning. |
-| **`SingleCellContractionParameters.m`** | Parameter Config | Core parameter definitions: domain size ($L_x, L_y$), target shape index $p_0$, contractility, time stepping, wound geometry, Bell's law parameters, and division thresholds. |
-| **`SelfPropelledParameters.m`** | Parameter Config | Configuration parameters for self-propelled Voronoi dynamics and active motility terms. |
-| **`StretchingParameters.m`** | Parameter Config | Configuration parameters for external tissue stretching simulations along the X-axis. |
-| **`genDataClassical.m`** | Mesh Generation | Generates the initial Voronoi cellular tessellation on a periodic domain with randomly seeded or regular cell centroids. |
-| **`functions2D/createWound.m`** | Wound Geometry | Removes cells within a specified geometric profile (circular, elliptical, or rectangular) accounting for periodic boundaries to create the wound cavity. |
-| **`functions2D/findWoundEdgeCells.m`** | Geometry / Mesh | High-performance $O(N)$ hash-map-based detector finding free boundary edges and the exact set of wound-margin cells. |
-| **`getVertexForcesClassical.m`** | Physics Engine | Evaluates net conservative forces on all vertices via energy functional gradients ($-\nabla_{\mathbf{r}} E$). Includes stability guards for degenerate cells. |
-| **`getEdgeForces.m`** | Physics Engine | Computes explicit tension and pressure acting along each unique edge: perimeter line tension, area pressure, purse-string tension, and force-per-length vectors. |
-| **`getTissueEnergyClassical.m`** | Physics Engine | Calculates total mechanical energy $E$ of the tissue collective (area deviations, perimeter deviations, and active potentials). |
-| **`getAreaDerivative.m`** | Physics Engine | Computes analytical derivative of cell area with respect to vertex coordinates $\partial A / \partial \mathbf{r}$. |
-| **`getPerimeterDerivative.m`** | Physics Engine | Computes analytical derivative of cell perimeter with respect to vertex coordinates $\partial P / \partial \mathbf{r}$. |
-| **`updateVertexPositions.m`** | Numerical Integrator | Updates vertex coordinates using explicit (forward) Euler integration based on nodal forces, viscosity $\eta$, and time step $\Delta t$. |
-| **`updateVertexPositionsMonotonic.m`** | Numerical Integrator | Alternative integrator that backtracks the explicit-Euler step size until the conservative mechanical energy does not increase; selected via `param.enforceMonotonicEnergy`. |
-| **`updateCellData.m`** | Numerical Integrator | Recomputes derived cell geometric properties (areas, perimeters) following vertex coordinate updates. |
-| **`checkT1transitions.m`** | Topological Transitions | Detects short edges eligible for T1 neighbor swaps using Bell's law force gating and Metropolis acceptance. Differentiates bulk vs. wound margin tolerances. |
-| **`getT1cellIDs.m`** | Topological Transitions | Identifies the four cells forming the quadrilateral tetrad around an edge undergoing a T1 swap. |
-| **`performT1swap.m`** | Topological Transitions | Rewires mesh connectivity and vertex-to-cell maps to execute the topological T1 neighbor exchange. |
-| **`checkWoundIntercalations.m`** | Topological Transitions | Evaluates 3-cell wound-margin intercalations (treating the wound as a pseudo-cell) to allow margin cell detachment and turnover. |
-| **`performWoundMarginT1.m`** | Topological Transitions | Executes genuine T1-style neighbor swaps at the wound boundary, transferring vertices between margin neighbors so cells leave the margin intact. |
-| **`trimWoundCorner.m`** | Topological Transitions | Removes sharp non-convex corner vertices where both incident edges are free wound boundaries, preventing margin turnover lockups. |
-| **`checkWoundSealing.m`** | Topological Transitions | Evaluates whether opposing wound-margin vertices have met across the cavity gap to trigger force-gated adhesion and sealing. |
-| **`performWoundSeal.m`** | Topological Transitions | Coalesces two colliding margin vertices into a single vertex, retiring boundary edges into standard internal edges to complete closure. |
-| **`checkCellDivision.m`** | Cell Proliferation | Identifies enlarged cells exceeding area thresholds and triggers force-gated division via Bell's law stochastic pressure gating and energy acceptance. |
-| **`performCellDivision.m`** | Cell Proliferation | Splits a dividing cell into two daughter cells along its short axis (orthogonal to principal elongation) through the centroid. |
-| **`insertVertexBetween.m`** | Topology Utility | Inserts a newly generated vertex strictly between two adjacent vertices in a cyclic connectivity list, preserving edge orientation. |
-| **`refreshWoundMargin.m`** | Topology Utility | Re-evaluates free edges and margin cell IDs directly from live connectivity after any topological event to guarantee consistency. |
-| **`getCellAreas.m`** | Geometric Analysis | Computes areas for all cells in the tissue, returning zero for degenerated or eliminated cells. |
-| **`getPolygonalCellArea.m`** | Geometric Analysis | Calculates the polygon area for a single cell using the shoelace formula with periodicity corrections. |
-| **`getCellPerimeters.m`** | Geometric Analysis | Computes perimeters for all cells across the tissue mesh. |
-| **`getPolygonalCellPerimeter.m`** | Geometric Analysis | Computes the boundary perimeter of a single cell polygon accounting for periodic edge wrapping. |
-| **`getCellBarycenter.m`** | Geometric Analysis | Calculates the geometric center (barycenter) of a given cell polygon. |
-| **`getCellPrincipalAxis.m`** | Geometric Analysis | Computes the principal elongation and short axes of a cell polygon using the second-moment shape tensor. |
-| **`getWoundArea.m`** | Geometric Analysis | Computes total wound area robustly via box conservation ($A_{\text{wound}} = L_x L_y - \sum A_{\text{cell}}$), immune to margin pinching or loop self-intersections. |
-| **`getOrderedWoundLoop.m`** | Geometric Analysis | Traverses unordered wound boundary edges to reconstruct a cyclic ordered vertex loop for margin geometric measurements. |
-| **`getTriangleArea.m`** | Geometric Analysis | Elementary utility calculating the signed area of a 2D triangle from 3 vertices. |
-| **`getCellDataWithinDomain.m`** | Geometric Analysis | Extracts vertices and connectivity of cells strictly inside the simulation domain bounds. |
-| **`getWoundDiagnostics.m`** | Diagnostics | Per-step summary of wound geometry/topology: boundary cell/edge counts, wound perimeter, and ordered-loop area; used for logging and as the reference wound area/perimeter at run start. |
-| **`validateTissueTopology.m`** | Diagnostics | Checks mesh connectivity and vertex-to-cell consistency each step (finite coordinates, in-range indices, non-degenerate cells). |
-| **`boundaryVertices.m`** | Periodic Boundary Cond. | Identifies boundary vertices by matching periodic slave vertices to master coordinates. |
-| **`findMasters.m`** | Periodic Boundary Cond. | Maps periodic slave (image) vertices along domain borders to their corresponding master vertex IDs. |
-| **`modifyVerticesForPeriodicity.m`** | Periodic Boundary Cond. | Unwraps cell vertex coordinates crossing periodic boundary domain limits for accurate geometric evaluation. |
-| **`updateImagePositions.m`** | Periodic Boundary Cond. | Enforces identical displacements on periodic image (slave) vertices as their master vertices move. |
-| **`updateMeshforPeriodicity.m`** | Periodic Boundary Cond. | Strips periodic duplicate nodes and reconstructs the fundamental domain mesh. |
-| **`getTile.m`** | Periodic Boundary Cond. | Generates a 3x3 (or 9-tile) representation of the periodic domain for boundary visualization. |
-| **`plot3Dtissue.m`** | Visualization | Primary 2D graphical patch renderer plotting cells, wound-margin highlights, and periodic boundaries. |
-| **`PlotTissueEvolution.m`** | Visualization | Generates multi-frame or time-lapse plots of tissue morphology evolution. |
-| **`plotEdgeForces.m`** | Visualization | Renders color-coded scalar maps (line tension, area pressure) or quiver vector arrows on cell edges. |
-| **`getCellDataforPlottingwithoutPeriJumps.m`** | Visualization | Eliminates spurious line artifacts across the periodic box by unwrapping polygons prior to rendering. |
-| **`PrintInformation.m`** | Utilities | Formatted console logger printing step numbers, energies, and convergence info. |
-| **`checkInhibition.m`** | Utilities | Spatial hash / collision check preventing vertices from being placed too close together upon initialization. |
-| **`checkSelfIntersect.m`** | Utilities | Detects and resolves self-intersecting polygon vertices through barycentric sorting. |
-| **`insertelem.m`** | Utilities | General 1D array insertion utility. |
-| **`rearrangeAnticlockwise.m`** | Utilities | Orders cell vertex indices in counter-clockwise sequence around the cell barycenter. |
-| **`cross3d.m`** | Utilities | Fast 3D cross-product calculation for 3-element vectors. |
-| **`applyStretchX.m`** | Utilities | Applies a uniform uniaxial stretch displacement field to tissue vertices along the X axis. |
-| **`final_results/`** | Results Folder | Output directory holding figures, simulation video (`wound_simulation.mp4`), CSV metrics, snapshots, and `workspace.mat`. |
-| **`functions2D/`** | Function Library | Secondary folder containing core geometric and physics helper functions callable across simulations. |
+### 2.1 Tissue representation
 
----
+Each cell is an ordered, anticlockwise list of vertex indices; each vertex stores a 2D position. Opposite sides of the box are identified (periodic boundary conditions), so every distance, area and perimeter is computed with periodic corrections (`modifyVerticesForPeriodicity.m`). The initial tissue is a periodic Voronoi tessellation generated from randomly placed seeds with a minimum spacing (`genDataClassical.m`). All driver scripts call `rng('default')`, so a given parameter set always produces the same tissue and the same trajectory.
 
-## How to Run the Code (Execution Guide)
+### 2.2 Cell energy and passive forces
 
-### Prerequisites and Setup
-1. **MATLAB Version**: MATLAB R2020a or later is recommended.
-2. **Toolboxes**: Basic MATLAB; Statistics and Machine Learning Toolbox (for Voronoi generation) and Image Processing Toolbox (optional, for frame capture).
-3. **Working Directory**: Start MATLAB and set your current working directory to the `2D_VX_model/` folder:
-   ```matlab
-   cd('/path/to/woundClosure/2D_VX_model')
-   ```
-4. **Path Initialization**: Each script automatically adds `./functions2D` and `../common` to the MATLAB path:
-   ```matlab
-   addpath(genpath('./functions2D'))
-   ```
+The mechanical energy of the cells is
 
----
-
-### Workflow 1: Complete Wound Closure Simulation (`runMain.m`)
-**Purpose**: The primary benchmark pipeline. Simulates a circular wound undergoing full closure over 2000 timesteps, combining purse-string tension, active cell crawling, margin contractility ramps, force-gated T1 transitions, cell divisions, and final wound sealing.
-
-**Execution**:
-In the MATLAB command prompt, type:
-```matlab
-runMain
+```
+E_cells = sum_c [ k_c (A_c - 1)^2 + (1/r_c) (P_c - p0)^2 ]
 ```
 
-**What it does**:
-1. Initializes a periodic epithelial sheet of cells ($L_x = 15, L_y = 15$) and creates a central circular wound ($R = 2.0$).
-2. Configures the $K_w$ recruitment clock, actomyosin purse-string, inward crawling traction, and margin contractility ramp (see [Current Model State](#current-model-state) for how these are currently coupled).
-3. Steps through 2000 explicit-Euler integration steps with topological updates:
-   - Bulk & margin T1 transitions (`checkT1transitions.m`)
-   - Wound margin cell turnover (`checkWoundIntercalations.m`, `performWoundMarginT1.m`, `trimWoundCorner.m`)
-   - Oriented cell division (`checkCellDivision.m`, `performCellDivision.m`)
-   - Wound sealing (`checkWoundSealing.m`, `performWoundSeal.m`)
-4. Renders and appends each timestep directly to an MP4 video (`wound_simulation.mp4`).
-5. Saves snapshot figures every 50 timesteps into `final_results/snapshots/`.
-6. Exports summary plots and numerical tables:
-   - `wound_area_vs_time.png`
-   - `margin_and_events_vs_time.png`
-   - `energy_vs_time.png`
-   - `ka_contractility_every_50_steps.png`
-   - `closure_metrics.csv` (contains timestep, area %, margin cell count, edge count, cumulative T1, seals, and divisions)
-   - `workspace.mat` (complete simulation workspace)
+where `A_c` and `P_c` are the area and perimeter of cell `c`, `p0` is the preferred shape index (equal to the preferred perimeter since `A0 = 1`), `k_c` is the area coefficient and `1/r_c` is the perimeter coefficient. Bulk values are `k_a = 1`, `r_s = 0.5`, `p0 = 4`.
+
+The force that cell `c` exerts on vertex `i` is the negative energy gradient,
+
+```
+F_i^(c) = -2 k_c (A_c - 1) dA_c/dr_i - (2/r_c) (P_c - p0) dP_c/dr_i
+```
+
+with analytical derivatives from `getAreaDerivative.m` and `getPerimeterDerivative.m`. Contributions of all cells sharing a vertex are summed in `getVertexForcesClassical.m`.
+
+### 2.3 Active wound forces
+
+- **Purse string.** Every free wound edge carries a line tension `lambda`, with energy `E_ps = lambda * sum(L_ij)` over the wound edges. Each wound edge pulls its two end vertices towards each other with force `lambda * e_ij`; along the curved boundary this contracts the wound.
+- **Crawling.** Each wound-margin cell receives an inward force of magnitude `F_crawl`, directed from the cell centre towards the wound centre and shared equally among the cell's vertices.
+- **Margin stiffening.** The area coefficient and perimeter contractility of the margin cells are multiplied by factors that rise from 1 towards `ka_wound_factor = 2` and `contractility_wound = 3`.
+
+### 2.4 Recruitment of the active forces
+
+A decaying clock `Kw(t) = Kw0 exp(-t/tau_Kw)` defines the recruited fraction `g = 1 - Kw/Kw0`. Each active amplitude relaxes towards its target at rate `k_recruit`:
+
+```
+lambda      <- lambda + dt k_recruit (lambda_purse_string * g - lambda)
+ka factor   <- relaxes towards 1 + (ka_wound_factor - 1) g
+contr. fac. <- relaxes towards 1 + (contractility_wound - 1) g
+F_crawl     =  crawl_force0 * max(0, 1 - lambda / lambda_purse_string)
+```
+
+so crawling is strongest just after wounding and hands over to the purse string as it assembles. With `lambda_purse_string = 4`, `crawl_force0 = 3`, `k_recruit = 1` and `tau_Kw = 2`, the margin factors reach 1.987 and 2.973 and the tension reaches 3.947 by step 1000.
+
+### 2.5 Optional wound-area resistance
+
+When `param.enableWoundResistance = true`, `Kw(t)` also acts as an elastic stiffness of the wound opening, `E_w = Kw(t) (A_w - A_w0)^2`, with the matching force on the wound-loop vertices. In the default configuration the clock is used for recruitment only, so closure is driven entirely by the purse string and crawling.
+
+### 2.6 Overdamped dynamics
+
+Vertices move according to `eta dr_i/dt = F_i`, integrated by explicit Euler (`updateVertexPositions.m`):
+
+```
+r_i(n+1) = r_i(n) + (dt/eta) F_i(n),   dt = 0.01, eta = 1
+```
+
+A second integrator, `updateVertexPositionsMonotonic.m`, halves the step until the mechanical energy does not increase; it is selected with `param.enforceMonotonicEnergy = true` (that mode also fixes the active coefficients and switches crawling off).
+
+### 2.7 Topological events
+
+All events follow the same three-stage rule:
+
+1. **Geometric eligibility** (a short edge, a crowded margin, a small gap).
+2. **Force-dependent Bell rate.** With a local mechanical drive `F`,
+   ```
+   k_off = k_off0 exp(F / f_beta_eff),   P_event = 1 - exp(-dt k_off)
+   ```
+   and the event is a candidate when `P_event` exceeds a fixed threshold. The threshold comparison makes event selection deterministic and the runs exactly reproducible.
+3. **Energy acceptance.** The event is built as a trial configuration and its energy change `dE` is evaluated with `getTissueEnergyClassical.m`. With the Metropolis temperature `T_eff = 0`, an event is accepted when `dE < 0`; a positive `T_eff` additionally accepts energy-increasing events with probability `exp(-dE/T_eff)`.
+
+**Bulk T1 transitions** (`checkT1transitions.m`, `performT1swap.m`). An edge shorter than `T1_TOL_bulk = 0.05` (or `T1_TOL_wound = 0.15` for margin cells) is a candidate. The drive is the edge tension per unit length, with `f_beta_eff = max(f_beta_T1 - (TOL - L), 0.01)`. One T1 is accepted per step, and its vertices then rest for `maxT1relaxsteps = 30` steps.
+
+**Wound-margin handoffs and corner trims** (`checkWoundIntercalations.m`, `performWoundMarginT1.m`, `trimWoundCorner.m`). The wound is treated as the fourth cell of a T1 tetrad. In a *handoff*, a margin cell transfers its wound contact to its two neighbours and withdraws into the bulk while remaining intact; the new edge starts at length `woundT1NewEdgeLength = 0.01` and grows under the forces. A *corner trim* removes a redundant corner vertex where two wound edges meet. The drive is the compressive area pressure of the margin cell. Handoffs are paced by the measured contraction of the wound perimeter,
+
+```
+N_target = max(5, ceil(N_b0 * min(1, P_w / P_w0)))
+```
+
+and a handoff is allowed while the margin holds more than `N_target` cells. The Bell threshold moves from `0.0125` towards `0.009` as the perimeter contracts. Handoffs are tried before trims. The energy used by the margin test includes `woundBoundaryCellEnergy = 5` per boundary cell, which carries no positional force and favours turnover of the margin.
+
+**Cell division** (optional, `checkCellDivision.m`, `performCellDivision.m`). A cell larger than `Area_div_thresh` is a candidate, driven by its area pressure `2 k (A - 1)`; it divides through its centroid along its short axis (`getCellPrincipalAxis.m`).
+
+**Wound sealing** (optional, `checkWoundSealing.m`, `performWoundSeal.m`). Two opposing margin vertices closer than `L_seal_thresh` are merged at their midpoint once the margin has at most `maxBoundaryCellsForSealing` cells.
+
+### 2.8 Wound measurement and diagnostics
+
+After every timestep the free edges are found (`findWoundEdgeCells.m`, hash map of edges), ordered into a closed loop (`getOrderedWoundLoop.m`) and the enclosed area is computed exactly by the shoelace formula
+
+```
+A_w = 1/2 sum_i (x_i y_(i+1) - y_i x_(i+1))
+```
+
+`getWoundDiagnostics.m` also records the box-area deficit `Lx Ly - sum(A_c)`, the wound perimeter, the boundary cell/edge/vertex counts, vertex degrees, the smallest cell area and edge length, and a connectivity check from `validateTissueTopology.m`.
+
+### 2.9 Order of operations in one timestep
+
+1. Update the recruitment clock and the active amplitudes.
+2. Compute vertex forces and advance the vertices.
+3. Update cell areas and perimeters; compute edge forces (`getEdgeForces.m`).
+4. Wound-margin handoffs/trims (recompute forces if one is accepted).
+5. Bulk T1 transitions (refresh the wound margin if one is accepted).
+6. Cell division and wound sealing (when enabled).
+7. Wound diagnostics; snapshot every 50 steps.
 
 ---
 
-### Workflow 2: Force-Based Closure Strategy Protocol (`runForceClosureStrategy.m`)
-**Purpose**: *(Formerly `runSunday.m`)* A 1000-timestep targeted experiment evaluating the dynamic feedback loop where the decay of the $K_w$ recruitment clock drives purse-string/crawling/contractility recruitment and force-gated topological transitions. This is the driver behind the project's designated results run. Run folders are named from the active mechanisms (e.g. a `with_resistance_` prefix appears only when `param.enableWoundResistance` is `true`), and an optional `WOUND_RUN_TAG` environment variable appends a custom tag to the folder name.
+## 3. Final results
 
-**Execution**:
+### 3.1 Wound-closure simulation
+
+Results folder: `results/endsem_btp_results/`
+
+| Quantity | Value |
+| :--- | :--- |
+| Steps / model time | 1000 / 10 |
+| Cells | 213 throughout |
+| Initial wound-loop area | 12.33 |
+| Peak loop area | 106.6% of initial, at step 117 |
+| 50% / 25% / 1% of initial area | steps 350 / 427 / 515 |
+| Final wound-loop area | 2.20 x 10^-3 (0.018% of initial; 99.98% reduction) |
+| Wound-margin cells | 15 -> 5 |
+| Accepted bulk T1 transitions | 17 |
+| Wound-margin handoffs / corner trims | 10 / 9 |
+| Mechanical energy | 105.2 -> 27.6 |
+| Final margin factors (area / contractility) | 1.987 / 2.973 |
+| Final purse-string tension | 3.947 |
+
+### 3.2 Phase-diagram validation (MATLAB)
+
+Results folder: `results/phase_diagram_validation_2026-11-19_185724/`
+
+Matching the cell energy to the Farhadifar form `K/2 (A - A0)^2 + Gamma/2 P^2 + Lambda * sum(L)` gives `K = 2 ka`, `Gamma = 2/rstiff`, `Lambda = -4 p0/rstiff`, so that
+
+```
+Gbar = 1/(ka rstiff),   Lbar = -2 p0 Gbar
+```
+
+and the soft/hexagonal boundary is the line `p0 = sqrt(8 sqrt(3)) = 3.7224`.
+
+| Check | Result |
+| :--- | :--- |
+| Analytical force vs. numerical energy gradient | relative difference 1.837 x 10^-10 |
+| Points relaxed | 55 (35 hexagonal, 20 soft), every point in its theoretical phase |
+| Boundary along the line (three Gbar rows) | hexagonal at p0 = 3.720, soft at p0 = 3.725, bracketing 3.7224 |
+| Soft networks | relaxed shape index settles at p0 |
+| Hexagonal networks | residual energy per cell matches `Gbar (3.7224 - p0)^2` |
+
+### 3.3 Independent NumPy cross-check
+
+Results folder: `results/phase_diagram_validation_numpy_port_2026-11-19/`
+
+A NumPy reimplementation of the bulk mechanics (`vxport.py`) relaxes 285 configurations and reproduces the same phase boundary; its forces match the numerical energy gradient to about 10^-9. All points shared with the MATLAB sweep have the same phase. See the `README.txt` in that folder.
+
+---
+
+## 4. Getting started
+
+**Requirements:** MATLAB R2020a or newer (base MATLAB, no toolboxes). Python 3 with NumPy, pandas and Matplotlib is needed only for the optional NumPy cross-check.
+
+**Working folder:** run every script from inside `2D_VX_model/`:
+
 ```matlab
+cd('/path/to/woundclosure/2D_VX_model')
+```
+
+The drivers add `functions2D/` to the path themselves. Several helper names exist both in this folder and in `functions2D/`; MATLAB gives files in the current folder priority over the path, so running from `2D_VX_model/` uses the versions in this folder, which are the ones used for all results. `functions2D/createWound.m` and `functions2D/findWoundEdgeCells.m` exist only in `functions2D/`.
+
+---
+
+## 5. Reproducing the final results
+
+### 5.1 Wound-closure simulation
+
+```matlab
+cd('/path/to/woundclosure/2D_VX_model')
+setenv('WOUND_RUN_TAG', 'crawling_active_1000_steps');   % optional: only sets the folder name
 runForceClosureStrategy
 ```
 
-**Outputs**:
-Generates initial/final tissue states, energy evolution curves, wound area trajectory, contractility ramp CSV table, and saves the full workspace, under `results/TAHAFINAL/<descriptive-name>_<timestamp>/`.
+This writes `results/force_closure_gradual_intercalation_crawling_active_1000_steps_<timestamp>/` with the same numbers as Section 3.1. Without the tag, the folder is `results/force_closure_gradual_intercalation_<timestamp>/`.
 
----
+Optional environment variables read by `runForceClosureStrategy.m`:
 
-### Workflow 3: Force-Gated Topological Transitions & Stress Analysis (`runForceBasedTransitions.m`)
-**Purpose**: *(Formerly `runSaturday.m`)* Focuses on validating force-dependent junctional remodeling (Bell's law) against classical length-based transitions, generating stress maps and Trepat force comparisons.
+| Variable | Effect |
+| :--- | :--- |
+| `WOUND_NSTEPS` | number of timesteps (default 1000) |
+| `WOUND_RUN_TAG` | text inserted in the output folder name |
+| `WOUND_CONFIG_JSON` | path to a JSON file whose fields override `param` fields (unknown names stop the run) |
+| `WOUND_SAVE_VIDEO` | `1` to record an MPEG-4 video with one frame per timestep |
 
-**Execution**:
+Clear a variable with `setenv('WOUND_RUN_TAG', '')`.
+
+### 5.2 Contractility and energy post-processing
+
+`plot_contractility_annotations.m` (inside the final results folder) reads the `workspace.mat` next to it and writes the contractility and tension plots, the annotated energy plot, the per-step CSV and the notes file. To apply it to a new run, copy it into that run's folder and run it:
+
 ```matlab
-runForceBasedTransitions
+run('results/<run folder>/plot_contractility_annotations.m')
 ```
 
-**Key Outputs**:
-- Force-vs-edge-length scatter plots at T1 transition events.
-- Azimuthal and radial spatial force profile comparing stress distribution to Trepat et al.
-- Per-edge tension and pressure color maps.
-- Step-by-step force vectors superimposed on the cell mesh.
+### 5.3 Phase-diagram validation
 
----
-
-### Workflow 4: Edge Force Instrumentation & Trepat Monolayer Validation (`runEdgeForceAnalysis.m`)
-**Purpose**: Computes and decomposes edge forces across the tissue into normal area pressure, tangential line tension, and purse-string components.
-
-**Execution**:
 ```matlab
-runEdgeForceAnalysis
-```
-To validate against Trepat radial profiles using the workspace output:
-```matlab
-load('results/edge_forces/edge_force_workspace.mat');
-validateTrepatForces(finalEdgeForces, param, param.Nsteps);
-```
-
----
-
-### Workflow 5: Classical Vertex Model Baseline (`mainClassical.m`)
-**Purpose**: Runs the unperturbed classical 2D vertex model without wound closure modifications for baseline comparison.
-
-**Execution**:
-```matlab
-mainClassical
-```
-
----
-
-### Workflow 6: Farhadifar Phase-Diagram Validation (`phaseDiagramValidation.m`)
-**Purpose**: Independently validates that the tissue-mechanics implementation (`getVertexForcesClassical.m`, `getTissueEnergyClassical.m`) reproduces the known Farhadifar et al. (2007) soft/hexagonal phase diagram, by relaxing periodic hexagonal-lattice tissues across a sweep of normalized line tension $\bar\Lambda$ and contractility $\bar\Gamma$ and checking where the relaxed network's mean shape index departs from the hexagonal value $p_0^* = \sqrt{8\sqrt{3}} \approx 3.7224$.
-
-**Execution**:
-```matlab
+cd('/path/to/woundclosure/2D_VX_model')
 phaseDiagramValidation
 ```
-Set `runMode = 'quick'` (default, ~50 points) or `'full'` at the top of the script for a denser sweep.
 
-**What it does**:
-1. Runs a force-vs-energy-gradient consistency check (finite-difference vs. analytical force) on a perturbed hexagonal lattice and reports the relative error.
-2. Relaxes a grid/line/point set of $(\bar\Lambda, \bar\Gamma)$ configurations to mechanical equilibrium and classifies each as hexagonal or soft from its relaxed shape index.
-3. Writes `phase_diagram_points.csv` and renders the phase diagram (with the simulated points overlaid on the theoretical boundary) plus relaxed-network figures for selected points.
+`runMode = 'quick'` (default, 55 points, about 25 minutes) reproduces Section 3.2; `runMode = 'full'` runs a denser sweep. Output: `results/phase_diagram_validation_<timestamp>/`.
 
-**Outputs** (saved to `results/phase_diagram_validation_<timestamp>/`):
-- `phase_diagram_points.csv`
-- `phase_diagram.png` / `.fig`
-- `relaxed_networks.png`
+### 5.4 NumPy cross-check (optional)
 
----
-
-### Workflow 7: Parameterized / Continued Trials (`runEnergyParameterTrial.m`, `continueEnergyTrial.m`)
-**Purpose**: Run reproducible parameter sweeps and extend existing runs without editing `SingleCellContractionParameters.m` directly.
-
-**Execution**:
-```matlab
-setenv('WOUND_CONFIG_JSON', '/path/to/overrides.json');
-setenv('WOUND_RUN_TAG', 'my_trial');
-setenv('WOUND_NSTEPS', '1500');          % optional
-runEnergyParameterTrial('/path/to/overrides.json', 'my_trial')
-```
-`overrides.json` is a flat JSON object of `param` field names to override (the script errors on an unrecognized field name, to catch typos early). To extend a finished run instead:
-```matlab
-continueEnergyTrial('results/TAHAFINAL/<run_folder>/workspace.mat', 500)
+```bash
+cd results/phase_diagram_validation_numpy_port_2026-11-19
+python3 sweep.py        # writes sweep_results.csv and cfg_*.npz
+python3 plot_phase.py   # writes phase_diagram_validation.png
 ```
 
 ---
 
-## Key Model Parameters
+## 6. Other simulation scripts
 
-Parameters are defined in [`SingleCellContractionParameters.m`](./SingleCellContractionParameters.m) and can be adjusted for sensitivity analysis, or overridden per-run via a JSON file as in [Workflow 7](#workflow-7-parameterized--continued-trials-runenergyparametertrialm-continueenergytrialm):
-
-| Parameter | Default | Physical Meaning |
+| Script | Purpose | Output folder |
 | :--- | :--- | :--- |
-| `param.Lx`, `param.Ly` | `15.0, 15.0` | Periodic box dimensions (simulation domain size) |
-| `param.p0` | `4.0` (fluid) / `2.0` (solid) | Target cell shape index ($P_0 / \sqrt{A_0}$) controlling tissue fluidity |
-| `param.Nsteps` | `3000` (default); e.g. `1000` for `runForceClosureStrategy.m` | Number of numerical integration timesteps |
-| `param.deltat` | `0.01` | Time increment per integration step |
-| `param.enforceMonotonicEnergy` | `false` | When `true`, switches to the backtracking integrator (`updateVertexPositionsMonotonic.m`) that keeps the mechanical energy strictly non-increasing |
-| `param.lambda_purse_string` | `4.0` | Actomyosin purse-string contractile tension, ramped up over `t_ramp_purse_string` (`50`) steps or by `Kw`-clock recruitment, depending on driver script |
-| `param.crawl_force0` | `3.0` | Active lamellipodial crawling force per margin vertex; decays as the purse-string ramps up (`tau_decay_crawl` = `100` as a fallback time constant) |
-| `param.enableWoundResistance` | `false` | Toggles whether $K_w$ exerts an actual elastic restoring force/energy on the wound opening. Off by default — closure is driven by the purse-string and crawling forces alone; `K_w` still runs as a recruitment-timing clock (see below) |
-| `param.Kw0` | `2.0` | Initial value of the $K_w$ recruitment clock |
-| `param.tau_Kw` | `2` | Characteristic decay timescale of the $K_w$ clock |
-| `param.k_recruit` | `1.0` | Rate constant for the purse-string/crawling/margin-stiffening recruitment ODEs |
-| `param.ka_wound_factor`, `param.contractility_wound` | `2.0`, `3.0` | Target multiplicative area-compressibility and contractility stiffening factors at the wound margin |
-| `param.useForceBasedTransitions` | `true` | Enables Bell's law force-dependent T1/T2 transition eligibility |
-| `param.f_beta_T1`, `param.f_beta_T2` | `22.27`, `0.49` | Bell's law characteristic bond force scales for T1 and wound-margin (T2-like) transitions |
-| `param.T_eff_T1`, `param.T_eff_T2`, `param.T_eff_seal` | `0`, `0`, `0` | Metropolis uphill-acceptance temperature for T1, wound-margin turnover, and sealing. At `0`, acceptance is deterministic: a transition is accepted only if $\Delta E \le 0$ |
-| `param.T_eff_div` | `3.51` | Metropolis uphill-acceptance temperature for cell division (non-zero; stochastic acceptance is available when `enableCellDivision` is turned on) |
-| `param.enableCellDivision` | `false` | Master toggle for force-gated cell division (off by default) |
-| `param.Area_div_thresh` | `1.10` | Relative cell area threshold triggering mitotic division |
-| `param.enableWoundSealing` | `false` | Master toggle for wound-margin vertex coalescence/sealing (off by default) |
-| `param.L_seal_thresh` | `0.15` | Opposing margin distance threshold triggering vertex coalescence (sealing) |
+| `runEnergyParameterTrial.m` | Function form of the main simulation: `runEnergyParameterTrial(configPath, tag)` applies the JSON overrides in `configPath`, runs, and also saves `metrics.json`, `parameters.json` and `energy_budget.csv` | `results/force_closure_gradual_intercalation_<tag>_<timestamp>/` |
+| `continueEnergyTrial.m` | `continueEnergyTrial(workspacePath, extraSteps)` loads a saved run and continues it for `extraSteps` more steps | `results/force_closure_gradual_intercalation_extended_<timestamp>/` |
+| `runMain.m` | Full closure run with video, snapshots and closure metrics (division and sealing follow the parameter file) | `testing/` |
+| `runForceBasedTransitions.m` | Wound run instrumented for edge forces: force-vs-length scatter at T1 events, Trepat-style radial/azimuthal profiles, tension maps, force histograms | `results/wound_contractility/` |
+| `runEdgeForceAnalysis.m` | Wound run followed by edge-force decomposition (perimeter tension, purse-string tension, area pressure) and force-vector plots | `results/edge_forces_new/` |
+| `myMainClassical.m` | Wound run with a live plot of the vertex forces every `plotForces_Interval` steps | `results/myMainClassical_*` |
+| `myMainClassicalWoundOnly.m` | Builds a wounded 30 x 30 tissue and plots its initial state | none |
+| `mainClassical.m` | Classical vertex model without a wound (T1 transitions only) | `results/mainClassical_*` |
 
 ---
 
-## Simulation Outputs and Results
+## 7. Parameters
 
-When running the main simulation (`runMain.m`), all outputs are directed to the **`final_results/`** directory:
+All defaults are in `SingleCellContractionParameters.m`, which needs `param.Lx`, `param.Ly` and `Case` (`'fluid'`: `p0 = 4`; `'solid'`: `p0 = 2`) to be set first. Drivers then override a few fields (`runForceClosureStrategy.m`: `Nsteps = 1000`, `plotForces = false`, circular wound of radius 2 at the box centre).
 
-- **`wound_simulation.mp4`**: High-resolution video showing continuous tissue dynamics, margin cell tracking (highlighted in magenta), and wound closure progression.
-- **`snapshots/`**: Contains numbered high-resolution PNG frames (`wound_t0050.png` through `wound_t2000.png`) sampled every 50 timesteps.
-- **`closure_metrics.csv`**: Tabular data recording per-timestep wound area percentage, count of margin cells, number of free boundary edges, and cumulative event tallies (bulk T1 swaps, wound seals, cell divisions).
-- **`wound_area_vs_time.png`**: Plot tracking wound area percentage over time from 100% ablation down to full closure.
-- **`margin_and_events_vs_time.png`**: Dual-panel plot correlating the reduction in wound-margin cell count with cumulative topological events.
-- **`ka_contractility_every_50_steps.csv` / `.png`**: Records the dynamic ramp of area modulus ($k_a$) and contractility ($1/r_{\text{stiff}}$) along the wound margin.
-- **`energy_vs_time.png`**: Total mechanical pseudo-energy trajectory verifying numerical dissipation and stability.
-- **`workspace.mat`**: Complete MATLAB binary workspace holding all variables, parameters, and time series for post-hoc analysis.
+**Cell mechanics and time stepping**
 
-`runForceClosureStrategy.m`, `runEnergyParameterTrial.m`, and `continueEnergyTrial.m` instead save each run to its own tagged, timestamped folder under **`results/TAHAFINAL/`**, with the same style of outputs (plus an optional every-timestep video via `WOUND_SAVE_VIDEO=1`), so parameter sweeps and extended trials don't overwrite one another.
+| Parameter | Default | Meaning |
+| :--- | :--- | :--- |
+| `ka` | 1.0 | bulk area coefficient |
+| `rstiff` | 0.5 | bulk perimeter parameter (perimeter coefficient `1/rstiff`) |
+| `p0` | 4.0 (fluid) / 2 (solid) | preferred shape index |
+| `eta` | 1 | vertex drag coefficient |
+| `deltat` | 0.01 | timestep |
+| `Nsteps` | 3000 (1000 in the main driver) | number of timesteps |
+| `isBoundaryFixed` | 0 | 0 = fully periodic box |
 
-`phaseDiagramValidation.m` saves independently to **`results/phase_diagram_validation_<timestamp>/`**: `phase_diagram_points.csv`, `phase_diagram.png` / `.fig`, and `relaxed_networks.png` (see [Workflow 6](#workflow-6-farhadifar-phase-diagram-validation-phasediagramvalidationm)).
+**Active forces and recruitment**
+
+| Parameter | Default | Meaning |
+| :--- | :--- | :--- |
+| `lambda_purse_string` | 4.0 | target purse-string line tension |
+| `t_ramp_purse_string` | 50 | linear ramp length, used when no recruitment state is present |
+| `enableWoundCrawling` | true | crawling on/off |
+| `crawl_force0` | 3.0 | initial crawling amplitude per margin cell |
+| `tau_decay_crawl` | 100 | exponential crawl decay, used when no recruitment state is present |
+| `ka_wound_factor` | 2.0 | target area-coefficient multiplier for margin cells |
+| `contractility_wound` | 3.0 | target contractility multiplier for margin cells |
+| `Kw0` | 2.0 | initial value of the clock `Kw` |
+| `tau_Kw` | 2 | decay time of `Kw` |
+| `k_recruit` | 1.0 | recruitment rate |
+| `enableWoundResistance` | false | true: `Kw` also acts as wound-area elasticity |
+| `enforceMonotonicEnergy` | false | true: fixed coefficients, no crawling, backtracking integrator |
+
+**Event rule (shared)**
+
+| Parameter | Default | Meaning |
+| :--- | :--- | :--- |
+| `useForceBasedTransitions` | true | Bell rule on; false = purely length-based T1 |
+| `k_off0` | 1.0 | base Bell rate |
+| `bellProbabilityThreshold` | 0.02 | threshold on `P_event` for T1 and division |
+
+**Bulk T1 transitions**
+
+| Parameter | Default | Meaning |
+| :--- | :--- | :--- |
+| `enableT1transitions` | true | T1 transitions on/off |
+| `enhanceT1atWound` | true | use `T1_TOL_wound` for margin cells |
+| `T1_TOL_bulk` / `T1_TOL_wound` | 0.05 / 0.15 | edge-length tolerances |
+| `f_beta_T1` | 22.271433 | Bell force scale |
+| `f_beta_length_slope_T1` | 1.0 | change of `f_beta_eff` with edge shortening |
+| `T_eff_T1` | 0 | Metropolis temperature |
+| `maxT1relaxsteps` | 30 | rest period of the vertices of an accepted T1 |
+
+**Wound-margin handoffs and trims**
+
+| Parameter | Default | Meaning |
+| :--- | :--- | :--- |
+| `enableWoundIntercalations` | true | margin events on/off |
+| `L_intercalation_thresh` | 0.5 | absolute wound-contact length threshold |
+| `L_intercalation_ratio_thresh` | 0.75 | contact length relative to the cell's mean edge length |
+| `woundT1NewEdgeLength` | 0.01 | length of the new edge created by a handoff |
+| `bellProbabilityThresholdT2` / `...T2Min` | 0.0125 / 0.009 | margin Bell threshold, upper / lower value |
+| `f_beta_T2` | 0.494935 | Bell force scale |
+| `f_beta_length_slope_T2` | 1.0 | change of `f_beta_eff` with contact shortening |
+| `T_eff_T2` | 0 | Metropolis temperature |
+| `minWoundBoundaryCells` | 5 | lower bound of the target margin population |
+| `woundBoundaryCellEnergy` | 5.0 | energy per boundary cell in the acceptance test |
+
+**Cell division (optional)**
+
+| Parameter | Default | Meaning |
+| :--- | :--- | :--- |
+| `enableCellDivision` | false | division on/off |
+| `allowWoundMarginDivision` | false | allow margin cells to divide |
+| `Area_div_thresh` | 1.102315 | area threshold |
+| `k_div0`, `f_beta_div`, `f_beta_div_slope` | 1.0, 0.250021, 1.0 | Bell parameters |
+| `T_eff_div` | 3.512995 | Metropolis temperature |
+
+**Wound sealing (optional)**
+
+| Parameter | Default | Meaning |
+| :--- | :--- | :--- |
+| `enableWoundSealing` | false | sealing on/off |
+| `L_seal_thresh` | 0.15 | vertex separation threshold |
+| `k_seal0`, `f_beta_seal`, `f_beta_seal_slope` | 1.0, 2.2552, 1.0 | Bell parameters |
+| `bellProbabilityThresholdSeal` | 0.02 | Bell threshold |
+| `maxBoundaryCellsForSealing` | 5 | sealing starts at or below this margin size |
+| `maxSealVertexDegree` | 5 | largest vertex degree allowed after a merge |
+| `T_eff_seal` | 0 | Metropolis temperature |
+
+**Plotting and other**
+
+| Parameter | Default | Meaning |
+| :--- | :--- | :--- |
+| `nVisualisation` | 50 | plotting interval in the classical scripts |
+| `plotForces`, `plotForces_Interval`, `plotForces_FigHandle`, `plotForces_Scale` | true, 20, 10, 2.0 | live force plot (`myMainClassical.m`) |
+| `vel0`, `SelfPropellingCellIDs` | 0, 0 | self-propulsion (inactive) |
+| `ApplyStretchX`, `StretchAtStep`, `StretchRatio`, `BoxIncompressibility` | 0, 100000, 1, 1 | uniaxial stretching (inactive) |
+| `cellIDstoTrack` | 0 | cells highlighted in plots |
+| `nT1`, `nWoundIntercalations`, `nWoundCornerTrims`, `nDivisions`, `nSeals` | 0 | event counters, updated during the run |
 
 ---
 
-### Reference Publications
-1. **Farhadifar, R., et al.** (2007). *The influence of cell mechanics, cell-cell interactions, and cell division on epithelial packing*. Current Biology, 17(24), 2095-2104.
-2. **Trepat, X., et al.** (2009). *Physical forces during collective cell migration*. Nature Physics, 5(6), 426-430.
-3. **Tetley, R. J., et al.** (2019). *Tissue fluidification by cell shape changes during embryonic repair*. Nature Physics, 15(11), 1195-1203.
+## 8. Output files
+
+### 8.1 `runForceClosureStrategy.m`
+
+| File | Content |
+| :--- | :--- |
+| `initial_state.png`, `final_state.png` | tissue at step 0 and at the last step, margin cells in magenta |
+| `snapshots/wound_tNNNN.png` | tissue every 50 steps |
+| `energy_vs_time.png` | mechanical energy vs model time |
+| `wound_area_vs_time.png` | wound-loop area as % of its initial value |
+| `wound_topology_diagnostics.png` / `.csv` | per-step loop area, area deficit, perimeter, boundary cells/edges, vertex degrees, smallest cell area and edge length, topology check |
+| `wound_intercalation_events.csv` | per-step record of the margin-event evaluation (candidates, thresholds, accepted handoffs/trims, energy changes) |
+| `wound_seal_events.csv` | per-step record of the sealing evaluation |
+| `ka_contractility_every_50_steps.png` / `.csv` | margin area and contractility factors every 50 steps |
+| `workspace.mat` | complete MATLAB workspace (parameters, final tissue, all logs) |
+| `<run>.mp4` | video, when `WOUND_SAVE_VIDEO=1` |
+
+Files added to the final results folder by `plot_contractility_annotations.m`: `contractility_vs_time.png/.fig`, `energy_vs_time_contractility_marked.png/.fig`, `contractility_vs_time_all_steps.csv`, `contractility_plot_notes.txt`.
+
+### 8.2 `phaseDiagramValidation.m`
+
+| File | Content |
+| :--- | :--- |
+| `phase_diagram_points.csv` | one row per relaxed point: set, Lbar, Gbar, p0, steps, status, mean shape index, edge-length variation, energy per cell, smallest area, phase |
+| `phase_diagram.png` / `.fig` | simulated phases over the theoretical regions, and the shape index along the line |
+| `relaxed_networks.png` | relaxed networks at two labelled points |
+
+---
+
+## 9. File reference
+
+### 9.1 Simulation drivers
+
+| File | Description |
+| :--- | :--- |
+| `runForceClosureStrategy.m` | Main wound-closure simulation used for the final results (Sections 2 and 5.1) |
+| `runEnergyParameterTrial.m` | Function version of the main simulation with JSON overrides and a run tag; saves metrics and parameters as JSON |
+| `continueEnergyTrial.m` | Continues a saved run for additional steps |
+| `runMain.m` | Full closure run with video and closure metrics |
+| `runForceBasedTransitions.m` | Edge-force-instrumented wound run with T1 force logs and Trepat-style profiles |
+| `runEdgeForceAnalysis.m` | Wound run followed by edge-force decomposition plots |
+| `myMainClassical.m` | Wound run with a live vertex-force plot |
+| `myMainClassicalWoundOnly.m` | Wounded-tissue set-up and initial plot |
+| `mainClassical.m` | Classical vertex model with T1 transitions, no wound |
+| `phaseDiagramValidation.m` | Farhadifar phase-diagram validation with the model's own force, energy and update functions (Section 3.2) |
+
+### 9.2 Parameter files
+
+| File | Description |
+| :--- | :--- |
+| `SingleCellContractionParameters.m` | All wound-model parameters (Section 7) |
+| `SelfPropelledParameters.m` | Parameters for self-propelled cell motion with the classical model |
+| `StretchingParameters.m` | Parameters for uniaxial stretching with the classical model |
+
+### 9.3 Mechanics
+
+| File | Description |
+| :--- | :--- |
+| `getVertexForcesClassical.m` | Net vertex forces: area and perimeter terms (with margin multipliers), crawling, purse string, optional wound-area term |
+| `getTissueEnergyClassical.m` | Energy used by the acceptance tests: cell energy, boundary-cell energy, purse-string energy, optional wound-area energy |
+| `getAreaDerivative.m` | Analytical `dA/dr` of a cell with respect to one vertex |
+| `getPerimeterDerivative.m` | Analytical `dP/dr` of a cell with respect to one vertex |
+| `getEdgeForces.m` | Per-edge force data: perimeter tension, purse-string tension, area pressure, tangential and normal force vectors and their values per unit length |
+| `updateVertexPositions.m` | Explicit Euler update with periodic wrapping |
+| `updateVertexPositionsMonotonic.m` | Backtracking Euler update that keeps the energy non-increasing |
+
+### 9.4 Topological events
+
+| File | Description |
+| :--- | :--- |
+| `checkT1transitions.m` | Bulk T1 candidates, Bell threshold, trial swap and energy acceptance; logs the force at each accepted T1 |
+| `getT1cellIDs.m` | The four cells around an edge selected for a T1 |
+| `performT1swap.m` | Rewires connectivity and vertex-to-cell maps for a T1 |
+| `checkWoundIntercalations.m` | Margin handoffs and corner trims: perimeter-paced target population, candidate classification, Bell threshold on compressive pressure, energy acceptance, event log |
+| `performWoundMarginT1.m` | Executes a handoff (wound as the fourth cell) with a short perpendicular new edge |
+| `trimWoundCorner.m` | Removes a corner vertex shared by two wound edges |
+| `refreshWoundMargin.m` | Recomputes the free edges and margin cells after any topological change |
+| `checkCellDivision.m` | Division candidates, Bell threshold on area pressure, energy acceptance |
+| `performCellDivision.m` | Splits a cell through its centroid along its short axis |
+| `getCellPrincipalAxis.m` | Long and short axes of a cell from its second-moment tensor |
+| `insertVertexBetween.m` | Inserts a vertex between two cyclically adjacent vertices of a cell |
+| `checkWoundSealing.m` | Sealing candidates (gap, Bell threshold on the closing force, energy acceptance) |
+| `performWoundSeal.m` | Merges two margin vertices at their midpoint |
+
+### 9.5 Wound geometry and diagnostics
+
+| File | Description |
+| :--- | :--- |
+| `functions2D/createWound.m` | Removes cells inside a circular or elliptical region, using periodic barycenters and distances |
+| `functions2D/findWoundEdgeCells.m` | Free edges (edges with one cell) and margin cells via a hash map of edges |
+| `getOrderedWoundLoop.m` | Orders the free edges into a closed vertex loop |
+| `getWoundDiagnostics.m` | Loop area, area deficit, perimeter, boundary counts, vertex degrees, smallest area and edge, topology check |
+| `validateTissueTopology.m` | Checks finite coordinates, valid indices, non-degenerate cells and vertex-to-cell consistency |
+| `getWoundArea.m` | Wound area from box-area conservation `Lx Ly - sum(A_c)` |
+| `validateTrepatForces.m` | Radial and azimuthal edge-force profiles around the wound (single snapshot or time-pooled), with adaptive bins and error bars |
+
+### 9.6 Cell geometry
+
+| File | Description |
+| :--- | :--- |
+| `getCellAreas.m` / `getPolygonalCellArea.m` | Areas of all cells / of one cell |
+| `getCellPerimeters.m` / `getPolygonalCellPerimeter.m` | Perimeters and edge lengths of all cells / of one cell |
+| `getCellBarycenter.m` | Barycenter of a cell |
+| `getTriangleArea.m` | Area of a triangle |
+| `getCellDataWithinDomain.m` | Vertices and cells inside the domain |
+| `getVertexToCellIDMap.m` | Vertex-to-cell map |
+| `rearrangeAnticlockwise.m` | Orders a cell's vertices anticlockwise |
+| `updateCellData.m` | Updates positions in `celldata` |
+
+### 9.7 Mesh generation and periodicity
+
+| File | Description |
+| :--- | :--- |
+| `genDataClassical.m` | Periodic Voronoi tissue from seeds placed with a minimum spacing; builds `celldata` |
+| `checkInhibition.m` | Minimum-spacing test used when placing seeds |
+| `checkSelfIntersect.m` | Vertex reordering for self-intersecting cells |
+| `findMasters.m` | Maps periodic image vertices to their master vertices |
+| `boundaryVertices.m` | Identifies boundary vertices through their images |
+| `getTile.m` | 3 x 3 periodic tiling of seed points |
+| `modifyVerticesForPeriodicity.m` | Unwraps a cell's vertices across the box edges |
+| `updateImagePositions.m` | Moves image vertices with their masters |
+| `updateMeshforPeriodicity.m` | Removes image vertices and rebuilds connectivity |
+
+### 9.8 Visualisation and utilities
+
+| File | Description |
+| :--- | :--- |
+| `plot3Dtissue.m` | Draws the cells as patches (margin and tracked cells highlighted) |
+| `getCellDataforPlottingwithoutPeriJumps.m` | Prepares cell polygons for plotting across the periodic boundary |
+| `plotEdgeForces.m` | Edge tension/pressure colour maps and force-vector plots |
+| `PlotTissueEvolution.m` | Replays and plots a stored simulation |
+| `PrintInformation.m` | Prints the step number and energy |
+| `applyStretchX.m` | Applies uniaxial stretching along x |
+| `insertelem.m` | Inserts an element into a vector |
+| `cross3d.m` | Cross product of two 3-vectors |
+
+### 9.9 `functions2D/`
+
+Contains `createWound.m` and `findWoundEdgeCells.m`, together with the base versions of the shared helpers from the original classical model (`genDataClassical`, `getCellAreas`, `getTissueEnergyClassical`, `getVertexForcesClassical`, `performT1swap`, ...). When the scripts are run from `2D_VX_model/`, the files in `2D_VX_model/` take precedence over these base versions.
+
+### 9.10 `results/`
+
+| Folder | Content |
+| :--- | :--- |
+| `endsem_btp_results/` | Final wound-closure run (Section 3.1), including `plot_contractility_annotations.m` |
+| `phase_diagram_validation_2026-11-19_185724/` | MATLAB phase-diagram validation (Section 3.2) |
+| `phase_diagram_validation_numpy_port_2026-11-19/` | NumPy cross-check (Section 3.3): `vxport.py`, `sweep.py`, `plot_phase.py`, `sweep_results.csv`, `phase_diagram_validation.png`, `README.txt` |
+
+### 9.11 Images
+
+`30x30Circular1.png`, `30x30Circular2.png`: example wounded 30 x 30 tissues.
+
+---
+
+## 10. Main data structures
+
+**`celldata`** (tissue state)
+
+| Field | Content |
+| :--- | :--- |
+| `nCells`, `nMasterVertices` | number of cells and vertices |
+| `r`, `r0`, `rinit` | current, previous and initial vertex positions (`nMasterVertices x 2`) |
+| `connec` | cell array of anticlockwise vertex lists |
+| `verttocell` | cell array: cells sharing each vertex |
+| `A`, `P`, `Ainit`, `EdgeData` | areas, perimeters, initial areas, edge lengths per cell |
+| `f` | vertex forces |
+| `slave_r`, `StoMmap`, `idx*Boundary`, `boundaryNodes` | periodic image data |
+| `woundEdges`, `cellIDtoContract` | free wound edges (`N x 2`) and margin cells |
+| `woundArea0`, `woundPerimeter0` | initial wound-loop area and perimeter |
+| `Kw_current`, `lambda_current`, `crawl_current`, `ka_wound_factor_current`, `contractility_wound_current` | recruitment state |
+
+**`param`**: all parameters of Section 7, plus `Lx`, `Ly`, `woundType`, `woundCircular` (`center`, `radius`), `cellIDtoContract`, `initialWoundBoundaryCells` and the event counters.
+
+**`edgeForceData`** (from `getEdgeForces.m`, one entry per unique edge): `v`, `cellIDs`, `length`, `edgeVec`, `midpoint`, `isWoundEdge`, `tension_peri`, `tension_purse`, `total_tension`, `pressure_area`, `force_tangent`, `force_normal`, `force_tangent_per_length`, `force_normal_per_length`.
+
+---
+
+## 11. References
+
+1. Farhadifar, R., Roper, J.-C., Aigouy, B., Eaton, S. and Julicher, F. (2007). The influence of cell mechanics, cell-cell interactions, and proliferation on epithelial packing. *Current Biology*, 17, 2095-2104.
+2. Brugues, A., Anon, E., Conte, V., Veldhuis, J. H., Gupta, M., Colombelli, J., Munoz, J. J., Brodland, G. W., Ladoux, B. and Trepat, X. (2014). Forces driving epithelial wound healing. *Nature Physics*, 10, 683-690.
+3. Tetley, R. J., Staddon, M. F., Heller, D., Hoppe, A., Banerjee, S. and Mao, Y. (2019). Tissue fluidity promotes epithelial wound healing. *Nature Physics*, 15, 1195-1203.
+4. Staddon, M. F., Bi, D., Tabatabai, A. P., Ajeti, V., Murrell, M. P. and Banerjee, S. (2018). Cooperation of dual modes of cell motility promotes epithelial stress relaxation to accelerate wound healing. *PLoS Computational Biology*, 14, e1006502.
+5. Kaurin, D., Bal, P. K. and Arroyo, M. (2022). Peeling dynamics of fluid membranes bridged by molecular bonds: moving or breaking. *Journal of the Royal Society Interface*, 19, 20220183.
+6. Bi, D., Yang, X., Marchetti, M. C. and Manning, M. L. (2016). Motility-driven glass and jamming transitions in biological tissues. *Physical Review X*, 6, 021011.
+7. Trepat, X., Wasserman, M. R., Angelini, T. E., Millet, E., Weitz, D. A., Butler, J. P. and Fredberg, J. J. (2009). Physical forces during collective cell migration. *Nature Physics*, 5, 426-430.

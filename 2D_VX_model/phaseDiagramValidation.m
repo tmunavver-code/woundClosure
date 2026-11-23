@@ -1,5 +1,5 @@
 %% phaseDiagramValidation: reproduce the Farhadifar et al. (2007) ground-state
-%  phase diagram with THIS repository's own mechanics functions.
+%  phase diagram with the model's own mechanics functions.
 %
 %  Farhadifar energy per cell:  K/2 (A - A0)^2 + Gamma/2 P^2 + Lambda * sum(edges)
 %  This model's energy per cell: ka (A - 1)^2 + (1/rstiff) (P - p0)^2
@@ -23,18 +23,14 @@
 %  Part 0 is a unit test: getVertexForcesClassical must equal the numerical
 %  gradient of getTissueEnergyClassical.
 %
-%  The box is fixed (as in every simulation in this repository), so the
-%  hatched "collapse" region of the published figure, which assumes a
-%  pressure-free box, is not tested here. In the fixed box the hexagonal
-%  network stays stable well past that boundary; Part 3 checks this up to
-%  Lbar = 2.4 (the NumPy port of these functions stays hexagonal to 2.7).
+%  The box is fixed, as in the wound simulations; Part 3 samples large
+%  positive Lbar, where the hexagonal network stays stable in a fixed box.
 %
 %  Outputs go to results/phase_diagram_validation_<timestamp>/.
 
 clear; close all; clc;
 
-% Run from this folder WITHOUT adding functions2D/ to the path: several files
-% there are stale copies that would shadow the current versions.
+% Run from this folder; the functions in this folder are used directly.
 thisDir = fileparts(mfilename('fullpath'));
 cd(thisDir);
 
